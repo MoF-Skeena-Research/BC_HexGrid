@@ -8,15 +8,19 @@ library(tidyverse)
 library(raster)
 library(rmapshaper)
 
+bgc <- st_read(dsn = "~/CommonTables/WNA_BGC_v12_12Oct2020.gpkg")
+bgc <- bgc[is.na(bgc$State),c("BGC")]
+dem <- raster("./BigDat/BC_25m_DEM_WGS84.tif")
 BC <- st_read(dsn = "./BigDat/BC_Province_Outline_Clean.gpkg")
 BC <- st_buffer(BC, dist = 0)
 BC <- ms_simplify(BC, keep = 0.2)
-grdAll <- st_make_grid(BC,cellsize = 40000, square = F, flat_topped = F)
+grdAll <- st_make_grid(BC,cellsize = 4000, square = F, flat_topped = F)
 ptsAll <- st_centroid(grdAll)
 grdPts <- st_sf(ID = seq(length(ptsAll)), geometry = ptsAll)
-st_write(grdPts, dsn = "/media/kiridaust/MrBig/BCGrid/HexPts400.gpkg", layer = "HexPts400", driver = "GPKG", overwrite = T, append = F)
-  grdPoly <- st_sf(ID = seq(length(grdAll)),geometry = grdAll)
-st_write(grdPoly, dsn = "/media/kiridaust/MrBig/BCGrid/HexGrd400", layer = "HexGrd400", driver = "GPKG")
+st_write(grdPts, dsn = "./BigDat/HexPts400.gpkg", layer = "HexPts400", driver = "GPKG", overwrite = T, append = F)
+
+grdPoly <- st_sf(ID = seq(length(grdAll)),geometry = grdAll)
+st_write(grdPoly, dsn = "./BigDat/HexGrd400", layer = "HexGrd400", driver = "GPKG")
 
 vertDist <- function(x){(sideLen(x)*3)/2}
 sideLen <- function(x){x/sqrt(3)}
@@ -25,35 +29,57 @@ tiles <- st_make_grid(BC, cellsize = c(305000,vertDist(305000)))
 plot(tiles)
 plot(BC, add = T)
 
-bgc <- st_read(dsn = "~/CommonTables/WNA_BGC_v12_12Oct2020.gpkg")
-bgc <- bgc[is.na(bgc$State),c("BGC")]
-
-dem <- raster("./BigDat/BC_25m_DEM_WGS84.tif")
-
 datOut <- foreach(tile = 1:length(tiles), .combine = rbind) %do% {
   cat("Processing tile",tile,"... \n")
   testTile <- tiles[tile,]
   testGrd <- st_intersection(grdPts, testTile)
-  grdBGC <- st_join(testGrd,bgc)
-  grdBGC$el <- raster::extract(dem, grdBGC)
-  grdBGC <- st_transform(grdBGC, 4326)
-  out <- cbind(st_drop_geometry(grdBGC),st_coordinates(grdBGC)) %>% as.data.table()
-  out <- out[,.(ID1 = ID, ID2 = MAP_LABEL, lat = Y, long = X, el)]
-  out[,TileNum := tile]
-  out
+  if(nrow(testGrd) > 1){
+    grdBGC <- st_join(testGrd,bgc)
+    grdBGC$el <- raster::extract(dem, grdBGC)
+    grdBGC <- st_transform(grdBGC, 4326)
+    out <- cbind(st_drop_geometry(grdBGC),st_coordinates(grdBGC)) %>% as.data.table()
+    out <- out[,.(ID1 = ID, ID2 = BGC, lat = Y, long = X, el)]
+    out[,TileNum := tile]
+    out
+  }else{
+    NULL
+  }
+
 }
 
 dat <- unique(datOut, by = "ID1")
+dat <- dat[!is.na(ID2),]
+fwrite(dat, "AllHexLocations.csv")
 tileID <- dat[,.(ID1,TileNum)]
+fwrite(tileID,"TileIDs.csv")
 
-for(i in 1:length(unique(tileID$TileNum))){
+for(i in unique(tileID$TileNum)){
   dat2 <- dat[TileNum == i,]
   dat2[,TileNum := NULL]
   dat2 <- dat2[complete.cases(dat2),]
   fwrite(dat2, paste0("Tile",i,"_In.csv"), eol = "\r\n")
 }
+library(climatenaAPI)
+library(tictoc)
+tileTest <- dat[TileNum == 21,]
+temp <- tileTest[1:2000,]
+temp[,TileNum := NULL]
+fwrite(temp,"FileforClimBC.csv")
 
+GCMs <- c("ACCESS1-0","CanESM2","CCSM4","CESM1-CAM5","CNRM-CM5","CSIRO-Mk3-6-0","GFDL-CM3","GISS-E2R","HadGEM2-ES",
+"INM-CM4","IPSL-CM5A-MR","MIROC5","MIROC-ESM","MRI-CGCM3","MPI-ESM-LR")
+rcps <- c("rcp45","rcp85")
+pers <- c("2025.gcm","2055.gcm","2085.gcm")
+test <- expand.grid(GCMs,rcps,pers)
+modNames <- paste(test$Var1,test$Var2,test$Var3, sep = "_")
 
+tic()
+tile1_all <- foreach(i = 1:90, .combine = rbind) %do% {
+  tile1_out <- climatebc_mult("FileforClimBC.csv",vip = 1,period = modNames[i], ysm = "YS")
+  tile1_out$ModName <- modNames[i]
+  tile1_out
+}
+toc()
 
 ####old code
 temp <- st_sf(tiles, ID = seq(65))
