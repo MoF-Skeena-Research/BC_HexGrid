@@ -25,13 +25,24 @@ st_write(grdPoly, dsn = "./BigDat/HexGrd400", layer = "HexGrd400", driver = "GPK
 vertDist <- function(x){(sideLen(x)*3)/2}
 sideLen <- function(x){x/sqrt(3)}
 
-tiles <- st_make_grid(BC, cellsize = c(305000,vertDist(305000)))
+tiles <- st_make_grid(BC, cellsize = c(250000,vertDist(307000)))
 plot(tiles)
 plot(BC, add = T)
 
-datOut <- foreach(tile = 1:length(tiles), .combine = rbind) %do% {
+tilesID <- st_as_sf(data.frame(tID = 1:length(tiles)),geom = tiles)
+tilesUse <- st_join(tilesID,BC)
+tilesUse <- tilesUse[!is.na(tilesUse$State),]
+tilesUse <- tilesUse[,"tID"]
+library(mapview)
+mapview(BC)+
+  tilesUse
+
+tilesUse$tID <- 1:nrow(tilesUse)
+st_write(tilesUse,dsn = "TileOutlines.gpkg")
+
+datOut <- foreach(tile = tilesUse$tID, .combine = rbind) %do% {
   cat("Processing tile",tile,"... \n")
-  testTile <- tiles[tile,]
+  testTile <- tilesUse[tile,]
   testGrd <- st_intersection(grdPts, testTile)
   if(nrow(testGrd) > 1){
     grdBGC <- st_join(testGrd,bgc)
@@ -57,13 +68,13 @@ for(i in unique(tileID$TileNum)){
   dat2 <- dat[TileNum == i,]
   dat2[,TileNum := NULL]
   dat2 <- dat2[complete.cases(dat2),]
-  fwrite(dat2, paste0("Tile",i,"_In.csv"), eol = "\r\n")
+  fwrite(dat2, paste0("./Output/Tile",i,"_In.csv"), eol = "\r\n")
 }
+
 library(climatenaAPI)
 library(tictoc)
-tileTest <- dat[TileNum == 21,]
-temp <- tileTest[1:2000,]
-temp[,TileNum := NULL]
+tileTest <- dat[TileNum == 1,]
+tileTest[,TileNum := NULL]
 fwrite(temp,"FileforClimBC.csv")
 
 GCMs <- c("ACCESS1-0","CanESM2","CCSM4","CESM1-CAM5","CNRM-CM5","CSIRO-Mk3-6-0","GFDL-CM3","GISS-E2R","HadGEM2-ES",
@@ -72,6 +83,8 @@ rcps <- c("rcp45","rcp85")
 pers <- c("2025.gcm","2055.gcm","2085.gcm")
 test <- expand.grid(GCMs,rcps,pers)
 modNames <- paste(test$Var1,test$Var2,test$Var3, sep = "_")
+
+
 
 tic()
 tile1_all <- foreach(i = 1:90, .combine = rbind) %do% {
@@ -121,3 +134,48 @@ st_write(grd4, dsn = "TestGrid",layer = "Offset2", driver = "ESRI Shapefile",app
 
 grdAll <- st_make_grid(BC, cellsize = 1000, square = F)
 
+climBC_JSON <- function(body,period,ysm,url = "http://api6.climatebc.ca/api/clmApi6"){
+  colnames(body) <- c("ID1", "ID2", "lat", "lon", "el")
+  body$prd <- period
+  body$varYSM <- ysm
+  nGrp <- floor(nrow(body)/1000) + 1
+  for (grp in 0:(nGrp - 1)) {
+    body2 <- body[(grp * 1000 + 1):(grp * 1000 + 1000), ]
+    out <- sapply(1:1000, function(i) {
+      num <- i
+      if (num <= nrow(body2)) {
+        paste(c(paste0(sprintf("[%d][ID1]", i - 1), "=", 
+                       body2$ID1[num]), paste0(sprintf("[%d][ID2]", 
+                                                       i - 1), "=", body2$ID2[num]), paste0(sprintf("[%d][lat]", 
+                                                                                                    i - 1), "=", body2$lat[num]), paste0(sprintf("[%d][lon]", 
+                                                                                                                                                 i - 1), "=", body2$lon[num]), paste0(sprintf("[%d][el]", 
+                                                                                                                                                                                              i - 1), "=", body2$el[num]), paste0(sprintf("[%d][prd]", 
+                                                                                                                                                                                                                                          i - 1), "=", body2$prd[num]), paste0(sprintf("[%d][varYSM]", 
+                                                                                                                                                                                                                                                                                       i - 1), "=", body2$varYSM[num])), collapse = "&")
+      }
+    })
+    out <- paste(out, collapse = "&")
+    result <- POST(url = url, body = out, add_headers(`Content-Type` = "application/x-www-form-urlencoded"), 
+                   timeout(4e+05))
+    output <- fromJSON(rawToChar(result$content))
+    head(output)
+    dim(output)
+    if (grp == 0) {
+      cmb <- output
+    }
+    else {
+      cmb <- rbind(cmb, output)
+    }
+  }
+  head(cmb)
+  dim(cmb)
+  ver = cmb$Version[1]
+  ver
+  cmb2 <- subset(cmb, select = -c(prd, varYSM, Version))
+  cmb3 <- data.frame(ID1 = cmb2[, 1], ID2 = as.factor(cmb2[, 
+                                                           2]), lapply(cmb2[, 3:ncol(cmb2)], function(x) as.numeric(as.character(x))))
+  print(ver)
+  outF <- paste0(gsub(".csv", "", inputFile), "_", gsub(".nrm", 
+                                                        "", period), ysm, ".csv")
+  outF
+}
