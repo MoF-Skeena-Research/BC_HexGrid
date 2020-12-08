@@ -22,6 +22,9 @@ cleanCrumbs <- function(minNum = 3, dat){
   bgcIdx <- data.table(ID = dat$ID,BGC = dat$BGC)
   tooSmall <- dat[dat$Area < minArea,]
   tooSmall$smallID <- seq_along(tooSmall$BGC)
+  if(nrow(tooSmall) < 1){
+    return(dat[,"BGC"])
+  }
   smallIdx <- as.data.table(st_drop_geometry(tooSmall[,c("ID","smallID")]))
   
   temp <- st_intersects(tooSmall,dat,dist = 5)
@@ -50,24 +53,39 @@ cleanCrumbs <- function(minNum = 3, dat){
 
 distcodes <- dbGetQuery(con, "select * from districts")[,1]
 
+library(doParallel)
+cl <- makeCluster(detectCores()-2)
+registerDoParallel(cl)
+
 per <- "Current91"
 provClean <- foreach(dcode = distcodes,.combine = rbind) %do% {
   q1 <- paste0("select siteno,period,bgc_pred,dist_code,geom from comb_norm_sf where dist_code = '",dcode,
                "' and period = '",per,"'")
   cat("Processing",dcode,"\n")
-  cat("Pulling data - ")
   dist <- st_read(con, query = q1)
-  cat("Joining - ")
-  distDiss <- aggregate(dist[,"geom"],  by = list(dist$bgc_pred), FUN = mean)
-  colnames(distDiss)[1] <- "BGC"
-  cat("Cleaning \n")
-  datClean <- cleanCrumbs(3, dat = distDiss)
-  rm(dist,distDiss)
+  testTile <- st_make_grid(dist,n = c(4,4))
+  testTile <- st_as_sf(data.frame(tID = 1:16, geom = testTile))
+  temp <- st_join(dist,testTile)
+  
+  tic()
+  out <- foreach(tid = unique(temp$tID), .combine = rbind, .packages = c("sf","data.table")) %dopar% {
+    datSub <- temp[temp$tID == tid,]
+    distDiss <- aggregate(datSub[,"geom"],  by = list(datSub$bgc_pred), FUN = mean)
+    colnames(distDiss)[1] <- "BGC"
+    datClean <- cleanCrumbs(3, dat = distDiss)
+    datClean <- cleanCrumbs(3, dat = datClean)
+    datClean
+  }
+  toc()
+  datClean <- aggregate(out[,"geometry"],  by = list(out$BGC), FUN = mean)
+  colnames(datClean)[1] <- "BGC"
+  
+  rm(dist,out)
   gc()
   datClean
 }
 
-
+st_write(provClean,"ProvinceCleaned.gpkg")
 
 
 ##pull tables from database
