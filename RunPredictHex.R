@@ -70,6 +70,7 @@ for(i in 14:19){
     
 }
 
+###old code
 grd <- st_read(dsn = "../BCGrid/HexGrd400.gpkg")
 pts <-st_read(dsn = "../BCGrid/HexPts400.gpkg")
 colnames(grd)[1] <- "id"
