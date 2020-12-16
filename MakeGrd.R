@@ -11,8 +11,11 @@ library(sp)
 vertDist <- function(x){(sideLen(x)*3)/2}
 sideLen <- function(x){x/sqrt(3)}
 
-bgc <- st_read(dsn = "~/CommonTables/WNA_BGC_v12_12Oct2020.gpkg")
+#bgc <- st_read(dsn = "~/CommonTables/WNA_BGC_v12_12Oct2020.gpkg")
+bgc <- st_read(dsn = "D:/CommonTables/BGC_maps/WNA_BGC_v12_12Oct2020.gpkg")
 bgc <- bgc[is.na(bgc$State),c("BGC")]
+
+##This is what I used to create the new hex grid
 dem <- raster("./BigDat/BC_25m_DEM_WGS84.tif")
 BC <- st_read(dsn = "./BigDat/BC_Province_Outline_Clean4.gpkg")
 BC <- ms_simplify(BC, keep = 0.05)
@@ -21,55 +24,43 @@ mapview(BC)
 st_write(BC,dsn = "BC_Simplified.gpkg")
 st_is_valid(BC)
 
-BC <- st_read("./BigDat/TempBC2.gpkg")
+BC <- st_read("./BigDat/TempBC2.gpkg")##very simple outline
 st_crs(BC) <- 3005
-grdAll <- st_make_grid(BC,cellsize = 400, square = F, flat_topped = F)
+grdAll <- st_make_grid(BC,cellsize = 400, square = F, flat_topped = F) ##make grid
 st_write(grdAll, dsn = "TempGrid400m.gpkg")
 
-BC <- st_read("./BC_Simplified.gpkg")
+BC <- st_read("./BC_Simplified.gpkg") ##actual outline
 grdAll <- st_read("./BC_Hex400m.gpkg")
-grdAll$geom <- grdAll$geom + c(-167,-95)
+grdAll$geom <- grdAll$geom + c(-167,-95) ##adjust so matches old centroids
 grdAll$siteno <- 1:nrow(grdAll)
 grdAll <- grdAll["siteno"]
 st_write(grdAll,dsn = "./BC_HexPoly400m.gpkg", driver = "GPKG")
 
-
-# temp <- st_make_grid(BC, cellsize = c(100000,vertDist(100000)))
-# temp <- st_as_sf(data.frame(ID = 1:length(temp)),geom = temp)
-# t1 <- st_intersection(BC,temp)
-# ids <- c(8,9,10,11)
-# 
-# out <- foreach(id = ids, .combine = rbind) %do% {
-#   t2 <- t1[t1$ID == id,]
-#   grdAll <- st_make_grid(t2,cellsize = 400, square = F, flat_topped = F)
-#   grd <- st_as_sf(grdAll)
-#   grd$Tile <- id
-#   grd
-# }
-# 
-# st_write(out,dsn = "TestTileGrd.gpkg")
-# 
-# t2 <- t1[t1$ID == 8,]
-# bb <- st_as_sfc(st_bbox(BC))
-# tic()
-# grdAll <- st_make_grid(bb,cellsize = 400, square = F, flat_topped = F)
-# toc()
-# 
-# BC <- as(BC, "Spatial")
-# samp <- spsample(BC,type = "hexagonal",cellsize = 400)
-# grd <- HexPoints2SpatialPolygons(samp, dx = 400)
-
+###intersect with old points
+Rcpp::sourceCpp("./C_Helper.cpp")
 grdAll <- st_read(dsn = "./BigDat/HexGrd400m.gpkg")
 grdAll <- grdAll["id"]
 grdAll$id <- 1:nrow(grdAll)
-oldPoints <- st_read("/media/kiridaust/MrBig/BCGrid/HexPts400.gpkg")
+oldPoints <- st_read("/media/kiridaust/MrBig/BCGrid/HexPts400.gpkg")##old centre points
 colnames(oldPoints)[1] <- "OldID"
 st_crs(grdAll) <- 3005
-temp <- st_intersects(grdAll,oldPoints,sparse = T)
+temp <- st_intersects(grdAll,oldPoints,sparse = T) ##faster than join
 test <- unlist_sgbp(temp) ##c++ function
 crosswalk <- data.table(NewID = grdAll$siteno, OldID = test)
 crosswalk[OldID == 0, OldID := NA]
 pntsNeeded <- crosswalk[is.na(OldID),NewID]
+
+###now this is Will's part
+#dem <- raster("./BigDat/BC_25m_DEM_WGS84.tif")
+dem <- raster("D:/CommonTables/DEMs/BC_25m_DEM_WGS84.tif")
+#BC <- st_read(dsn = "./BigDat/BC_Province_Outline_Clean.gpkg")
+BC <- st_read(dsn = "D:/CommonTables/BC_AB_US_Shp/BC_Province_Outline_Clean.gpkg")
+BC <- st_buffer(BC, dist = 0)
+BC <- ms_simplify(BC, keep = 0.2)
+grdAll <- st_make_grid(BC,cellsize = 4000, square = F, flat_topped = F)
+ptsAll <- st_centroid(grdAll)
+grdPts <- st_sf(ID = seq(length(ptsAll)), geometry = ptsAll)
+st_write(grdPts, dsn = "./BigDat/HexPts400.gpkg", layer = "HexPts400", driver = "GPKG", overwrite = T, append = F)
 
 ptsAll <- st_centroid(grdAll)
 st_write(ptsAll, dsn = "./BC_HexPoints400m.gpkg", driver = "GPKG", overwrite = T, append = F)

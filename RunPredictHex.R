@@ -55,7 +55,8 @@ tile_predict <- function(Y1, maxSize = 6000000){
 }
 
 ## future periods
-for(i in 1){
+tableName <- "cciss_future"
+for(i in 1:19){
   cat("Processing tile",i,"... \n")
     dat <- fread(paste0(datDir,"Tile",i,"_Out.csv"),select = varImport)
     Y1 <- addVars(dat)
@@ -75,8 +76,9 @@ for(i in 1){
     Y1$FuturePeriod <- gsub(".gcm","",Y1$FuturePeriod)
     Y1 <- Y1[,c("GCM","Scenario","FuturePeriod","SiteNo","BGC","BGC.pred")]
     setnames(Y1, c("gcm","scenario","futureperiod","siteno","bgc","bgc_pred"))
+
     Y1[,old_id := NA]
-    dbWriteTable(con, "cciss_future", Y1,row.names = F, append = T)
+    dbWriteTable(con, tableName, Y1,row.names = F, append = T)
     rm(Y1,dat)
     gc()
     
