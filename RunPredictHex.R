@@ -22,10 +22,10 @@ addVars <- function(dat){
 }
 
 drv <- dbDriver("PostgreSQL")
-con <- dbConnect(drv, user = "postgres", host = "localhost",password = "Kiriliny41", port = 5432, dbname = "cciss_data")
-
+#con <- dbConnect(drv, user = "postgres", host = "localhost",password = "Kiriliny41", port = 5432, dbname = "cciss_data")
+con <- dbConnect(drv, user = "postgres", host = "192.168.1.64",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for local use
 datDir <- "~/ClimBC_Tiles/"
-load("WNAv11_35_VAR_SubZone_ranger.Rdata")
+load("./BGC_models/WNAv12_Subzone_19_Var_ranger_outlier_weights4_noclhs.Rdata")
 varImport <- c("Year","ID1","ID2", "Tmax_sp", "Tmax_sm", "Tmin_wt", "Tmin_sp", "Tave_at", "PPT_wt", 
   "PPT_sp", "PPT_sm", "PPT_at", "MSP",
   "DD5_wt", "DD5_sp", "DD5_sm", "DD5_at", "PAS_wt", "PAS_sp", "PAS_sm", 
