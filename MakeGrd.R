@@ -7,10 +7,50 @@ library(foreach)
 library(tidyverse)
 library(raster)
 library(rmapshaper)
+library(sp)
+vertDist <- function(x){(sideLen(x)*3)/2}
+sideLen <- function(x){x/sqrt(3)}
 
 #bgc <- st_read(dsn = "~/CommonTables/WNA_BGC_v12_12Oct2020.gpkg")
 bgc <- st_read(dsn = "D:/CommonTables/BGC_maps/WNA_BGC_v12_12Oct2020.gpkg")
 bgc <- bgc[is.na(bgc$State),c("BGC")]
+
+##This is what I used to create the new hex grid
+dem <- raster("./BigDat/BC_25m_DEM_WGS84.tif")
+BC <- st_read(dsn = "./BigDat/BC_Province_Outline_Clean4.gpkg")
+BC <- ms_simplify(BC, keep = 0.05)
+library(mapview)
+mapview(BC)
+st_write(BC,dsn = "BC_Simplified.gpkg")
+st_is_valid(BC)
+
+BC <- st_read("./BigDat/TempBC2.gpkg")##very simple outline
+st_crs(BC) <- 3005
+grdAll <- st_make_grid(BC,cellsize = 400, square = F, flat_topped = F) ##make grid
+st_write(grdAll, dsn = "TempGrid400m.gpkg")
+
+BC <- st_read("./BC_Simplified.gpkg") ##actual outline
+grdAll <- st_read("./BC_Hex400m.gpkg")
+grdAll$geom <- grdAll$geom + c(-167,-95) ##adjust so matches old centroids
+grdAll$siteno <- 1:nrow(grdAll)
+grdAll <- grdAll["siteno"]
+st_write(grdAll,dsn = "./BC_HexPoly400m.gpkg", driver = "GPKG")
+
+###intersect with old points
+Rcpp::sourceCpp("./C_Helper.cpp")
+grdAll <- st_read(dsn = "./BigDat/HexGrd400m.gpkg")
+grdAll <- grdAll["id"]
+grdAll$id <- 1:nrow(grdAll)
+oldPoints <- st_read("/media/kiridaust/MrBig/BCGrid/HexPts400.gpkg")##old centre points
+colnames(oldPoints)[1] <- "OldID"
+st_crs(grdAll) <- 3005
+temp <- st_intersects(grdAll,oldPoints,sparse = T) ##faster than join
+test <- unlist_sgbp(temp) ##c++ function
+crosswalk <- data.table(NewID = grdAll$siteno, OldID = test)
+crosswalk[OldID == 0, OldID := NA]
+pntsNeeded <- crosswalk[is.na(OldID),NewID]
+
+###now this is Will's part
 #dem <- raster("./BigDat/BC_25m_DEM_WGS84.tif")
 dem <- raster("D:/CommonTables/DEMs/BC_25m_DEM_WGS84.tif")
 #BC <- st_read(dsn = "./BigDat/BC_Province_Outline_Clean.gpkg")
@@ -22,11 +62,10 @@ ptsAll <- st_centroid(grdAll)
 grdPts <- st_sf(ID = seq(length(ptsAll)), geometry = ptsAll)
 st_write(grdPts, dsn = "./BigDat/HexPts400.gpkg", layer = "HexPts400", driver = "GPKG", overwrite = T, append = F)
 
-grdPoly <- st_sf(ID = seq(length(grdAll)),geometry = grdAll)
-st_write(grdPoly, dsn = "./BigDat/HexGrd400", layer = "HexGrd400", driver = "GPKG")
+ptsAll <- st_centroid(grdAll)
+st_write(ptsAll, dsn = "./BC_HexPoints400m.gpkg", driver = "GPKG", overwrite = T, append = F)
 
-vertDist <- function(x){(sideLen(x)*3)/2}
-sideLen <- function(x){x/sqrt(3)}
+ptsNew <- ptsAll[ptsAll$siteno %in% pntsNeeded,]
 
 tiles <- st_make_grid(BC, cellsize = c(250000,vertDist(307000)))
 plot(tiles)
@@ -97,45 +136,6 @@ tile1_all <- foreach(i = 1:90, .combine = rbind) %do% {
 }
 toc()
 
-####old code
-temp <- st_sf(tiles, ID = seq(65))
-t1 <- temp[1,]
-t2 <- st_intersection(t1,BC)
-
-tile_width <- st_bbox(tiles[2,])[1] - st_bbox(tiles[1,])[1]
-
-grd1 <- st_make_grid(tiles[1,],cellsize = 400, square = F, flat_topped = F)
-grd2 <- st_make_grid(tiles[2,],cellsize = 400, square = F, flat_topped = F)
-grd3 <- st_make_grid(tiles[8,],cellsize = 400, square = F, flat_topped = F)
-
-plot(tiles[c(1,2,8),])
-plot(grd1, add = T)
-plot(grd2, add = T)
-plot(grd3, add = T)
-
-test <- st_difference(grd1,st_union(grd2))
-plot(tiles[c(1,2,8),])
-plot(test, add = T)
-
-grd1 <- st_make_grid(tiles[1,],cellsize = 2000,square = F, flat_topped = T)
-grd2 <- st_make_grid(tiles[2,],cellsize = 2000,square = F, flat_topped = T)
-grd3 <- st_make_grid(tiles[3,],cellsize = 2000,square = F, flat_topped = T)
-
-out <- st_sf(geom = c(grd1,grd2,grd3),ID = rep(c(1,2,3), c(length(grd1),length(grd2),length(grd3))))
-st_write(out, dsn = "TestGrid",layer = "Test4", driver = "ESRI Shapefile",append = T, overwrite = T)
-
-temp <- st_sf(geom = grd2, id = seq(length(grd2)))
-plot(temp[1,])
-st_area(temp[1,])
-
-#grd2 <- st_make_grid(t2,offset = c(bb[1],bb[2]), cellsize = 1000, square = F)
-t3 <- c(grd1,grd2)
-plot(t3)
-st_write(t3, dsn = "TestGrid",layer = "test1", driver = "ESRI Shapefile",append = F, overwrite = T)
-st_write(tiles[1:2,],dsn = "TestGrid",layer = "Tiles", driver = "ESRI Shapefile", append = T)
-st_write(grd4, dsn = "TestGrid",layer = "Offset2", driver = "ESRI Shapefile",append = T)
-
-grdAll <- st_make_grid(BC, cellsize = 1000, square = F)
 
 climBC_JSON <- function(body,period,ysm,url = "http://api6.climatebc.ca/api/clmApi6"){
   colnames(body) <- c("ID1", "ID2", "lat", "lon", "el")
