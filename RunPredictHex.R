@@ -126,7 +126,7 @@ tile_predict <- function(Y1, maxSize = 6000000){
 tableName <- "cciss_future"
 datDir <- "~/Desktop/BCHex_ClimateBC/Future/"
 futNums <- c(0:5,7,8,10:19) ##tiles 6 and 9 are too big, I split them up into 14:19
-for(i in futNums[-1]){
+for(i in futNums){
   cat("Processing tile",i,"... \n")
   varImport <- c("Year","NewID","ID2","AHM", "bFFP", "CMD_sp", "DD5", "DD5_sm", 
                  "DD5_sp", "Eref_sm", "Eref_sp", "MCMT", "MWMT", "NFFD", "PAS_sp", 
