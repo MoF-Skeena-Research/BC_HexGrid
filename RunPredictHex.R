@@ -84,7 +84,7 @@ addVars <- function(dat){
 }
 
 drv <- dbDriver("PostgreSQL")
-con <- dbConnect(drv, user = "postgres", host = "localhost",password = "Kiriliny41", port = 5432, dbname = "cciss_data")
+#con <- dbConnect(drv, user = "postgres", host = "localhost",password = "Kiriliny41", port = 5432, dbname = "cciss_data")
 con <- dbConnect(drv, user = "postgres", host = "192.168.1.64",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for local use
 
 # grd <- st_read("BC_HexPoly400m.gpkg")
@@ -105,7 +105,7 @@ con <- dbConnect(drv, user = "postgres", host = "192.168.1.64",password = "Kiril
 # setnames(crosstab,c("new_id","old_id"))
 # dbWriteTable(con, "id_crosswalk", crosstab, row.names = F)
 
-load("./WNAv12_Subzone_19_Var_ranger_outlier_weights4_noclhs.Rdata")
+load("./BGC_models/WNAv12_Subzone_19_Var_ranger_mah_splitwt.Rdata")
 
 
 
@@ -124,7 +124,7 @@ tile_predict <- function(Y1, maxSize = 6000000){
 
 ## future periods
 tableName <- "cciss_future"
-datDir <- "~/Desktop/BCHex_ClimateBC/Future/"
+datDir <- "E:/BGC_Hex/BCHex_ClimateBC/Future/"
 futNums <- c(0:5,7,8,10:19) ##tiles 6 and 9 are too big, I split them up into 14:19
 for(i in futNums){
   cat("Processing tile",i,"... \n")
@@ -158,7 +158,7 @@ for(i in futNums){
 
 ## Normal Period
 tableName <- "cciss_historic"
-datDir <- "~/Desktop/BCHex_ClimateBC/Normal/"
+datDir <- "E:/BGC_Hex/BCHex_ClimateBC/Normal/"
 varImport <- c("NewID","ID2","AHM", "bFFP", "CMD_sp", "DD5", "DD5_sm", 
                "DD5_sp", "Eref_sm", "Eref_sp", "MCMT", "MWMT", "NFFD", "PAS_sp", 
                "PAS_wt", "SHM", "Tmax_sm","PPT_at","PPT_wt","PPT05", "PPT06", "PPT07", "PPT08", 
@@ -192,7 +192,7 @@ for(i in 0:13){
 
 ## Current Period
 tableName <- "cciss_historic"
-datDir <- "~/Desktop/BCHex_ClimateBC/Current/"
+datDir <-"E:/BGC_Hex/BCHex_ClimateBC/Current/"
 varImport <- c("ID1","ID2","AHM", "bFFP", "CMD_sp", "DD5", "DD5_sm", 
                "DD5_sp", "Eref_sm", "Eref_sp", "MCMT", "MWMT", "NFFD", "PAS_sp", 
                "PAS_wt", "SHM", "Tmax_sm","PPT_at","PPT_wt","PPT05", "PPT06", "PPT07", "PPT08", 
