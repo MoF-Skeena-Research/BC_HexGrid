@@ -17,6 +17,7 @@ con <- dbConnect(drv, user = "postgres", host = "smithersresearch.ca",password =
 
 cleanCrumbs <- function(minNum = 3, dat){
   minArea <- minNum*138564.1
+  units(minArea) <- "m^2"
   dat <- st_cast(dat,"MULTIPOLYGON") %>% st_cast("POLYGON")
   dat$Area <- st_area(dat)
   dat$ID <- seq_along(dat$BGC)

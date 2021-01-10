@@ -226,7 +226,6 @@ for(i in 0:13){
 
 ###now do joins and create indices
 dbExecute(con, "create table historic_sf as select cciss_historic.*,grid_dist.dist_code,grid_dist.geom from cciss_historic,grid_dist where cciss_historic.siteno = grid_dist.siteno")
-
 dbExecute(con, "create table future_sf as select cciss_future.*,grid_dist.dist_code,grid_dist.geom from cciss_future,grid_dist where cciss_future.siteno = grid_dist.siteno")
 dbExecute(con, "create index fut_sf_idx on future_sf (dist_code,scenario,gcm,futureperiod)")
 dbExecute(con, "create index hist_sf_idx on historic_sf (dist_code,period)")
