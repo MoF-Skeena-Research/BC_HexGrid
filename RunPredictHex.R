@@ -86,6 +86,7 @@ addVars <- function(dat){
 drv <- dbDriver("PostgreSQL")
 #con <- dbConnect(drv, user = "postgres", host = "localhost",password = "Kiriliny41", port = 5432, dbname = "cciss_data")
 con <- dbConnect(drv, user = "postgres", host = "192.168.1.64",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for local use
+con <- dbConnect(drv, user = "postgres", host = "smithersresearch.ca",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for local use
 
 # grd <- st_read("BC_HexPoly400m.gpkg")
 # st_write(grd, dsn = con,"hex_grid")
@@ -223,4 +224,12 @@ for(i in 0:13){
   
 }
 
+###now do joins and create indices
+dbExecute(con, "create table historic_sf as select cciss_historic.*,grid_dist.dist_code,grid_dist.geom from cciss_historic,grid_dist where cciss_historic.siteno = grid_dist.siteno")
+
+dbExecute(con, "create table future_sf as select cciss_future.*,grid_dist.dist_code,grid_dist.geom from cciss_future,grid_dist where cciss_future.siteno = grid_dist.siteno")
+dbExecute(con, "create index fut_sf_idx on future_sf (dist_code,scenario,gcm,futureperiod)")
+dbExecute(con, "create index hist_sf_idx on historic_sf (dist_code,period)")
+dbExecute(con, "create index fut_idx on cciss_future (siteno)")
+dbExecute(con, "create index hist_idx on cciss_historic (siteno)")
 
