@@ -54,7 +54,7 @@ cleanCrumbs <- function(minNum = 3, dat){
 
 ## pull district codes from database
 #distcodes <- dbGetQuery(con, "select * from districts")[,1]
-distcodes <- dbGetQuery(con, "select * from dist_codes")[,1]
+#distcodes <- dbGetQuery(con, "select * from dist_codes")[,1]
 
 library(doParallel)
 cl <- makeCluster(detectCores()-2)
