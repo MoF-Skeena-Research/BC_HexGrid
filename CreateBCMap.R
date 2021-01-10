@@ -13,7 +13,7 @@ library(tictoc)
 drv <- dbDriver("PostgreSQL")
 con <- dbConnect(drv, user = "postgres", host = "192.168.1.64",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for local use
 #con <- dbConnect(drv, user = "postgres", host = "localhost",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ## for local machine
-con <- dbConnect(drv, user = "postgres", host = "smithersresearch.ca",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for external use
+#con <- dbConnect(drv, user = "postgres", host = "smithersresearch.ca",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for external use
 
 cleanCrumbs <- function(minNum = 3, dat){
   minArea <- minNum*138564.1
@@ -54,7 +54,7 @@ cleanCrumbs <- function(minNum = 3, dat){
 
 ## pull district codes from database
 #distcodes <- dbGetQuery(con, "select * from districts")[,1]
-#distcodes <- dbGetQuery(con, "select * from dist_codes")[,1]
+distcodes <- dbGetQuery(con, "select * from dist_codes")[,1]
 
 library(doParallel)
 cl <- makeCluster(detectCores()-2)
@@ -103,6 +103,7 @@ for(mod in gcms){
 }
 toc()
 ### historic data - 61-90 or 91 - 2019
+tic()
 per <- "Current91" ##"Normal61"
 provClean <- foreach(dcode = distcodes,.combine = rbind) %do% {
   q1 <- paste0("select siteno,period,bgc_pred,dist_code,geom from historic_sf where dist_code = '",dcode,
@@ -132,5 +133,5 @@ provClean <- foreach(dcode = distcodes,.combine = rbind) %do% {
 }
 
 st_write(provClean,"./maps/ProvinceCleaned.gpkg")
-
+toc()
 
