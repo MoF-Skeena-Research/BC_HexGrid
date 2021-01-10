@@ -13,7 +13,7 @@ library(tictoc)
 drv <- dbDriver("PostgreSQL")
 con <- dbConnect(drv, user = "postgres", host = "192.168.1.64",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for local use
 #con <- dbConnect(drv, user = "postgres", host = "localhost",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ## for local machine
-#con <- dbConnect(drv, user = "postgres", host = "smithersresearch.ca",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for external use
+con <- dbConnect(drv, user = "postgres", host = "smithersresearch.ca",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for external use
 
 cleanCrumbs <- function(minNum = 3, dat){
   minArea <- minNum*138564.1
@@ -70,8 +70,8 @@ per <- 2055
 tic()
 for(mod in gcms){
   provClean <- foreach(dcode = distcodes,.combine = rbind) %do% { ##for each district
-    q1 <- paste0("select siteno,bgc_pred,dist_code,geom from cciss_fut_sf where dist_code = '",dcode,
-                 "' and futureperiod = '",per,"' and scenario = '",scn,"'and gcm = '",mod,"'")
+    q1 <- paste0("select siteno,bgc_pred,dist_code,geom from future_sf where dist_code = '",dcode,
+                 "' and scenario = '",scn,"'and gcm = '",mod,"' and futureperiod = '",per,"'")
     cat("Processing",dcode,"\n")
     ##pull data
     dist <- st_read(con, query = q1)
@@ -105,7 +105,7 @@ toc()
 ### historic data - 61-90 or 91 - 2019
 per <- "Current91" ##"Normal61"
 provClean <- foreach(dcode = distcodes,.combine = rbind) %do% {
-  q1 <- paste0("select siteno,period,bgc_pred,dist_code,geom from norm_comb_sf where dist_code = '",dcode,
+  q1 <- paste0("select siteno,period,bgc_pred,dist_code,geom from historic_sf where dist_code = '",dcode,
                "' and period = '",per,"'")
   cat("Processing",dcode,"\n")
   dist <- st_read(con, query = q1)
