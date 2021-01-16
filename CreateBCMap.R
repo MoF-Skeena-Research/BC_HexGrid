@@ -62,10 +62,10 @@ cl <- makeCluster(detectCores()-2)
 registerDoParallel(cl)
 
 ###future - currently just looping through models, assuming only 1 time periods and scenario. Could change this
-##GCMs <- c("ACCESS1-0","CanESM2","CCSM4","CESM1-CAM5","CNRM-CM5","CSIRO-Mk3-6-0","GFDL-CM3","GISS-E2R","HadGEM2-ES",
-##          "INM-CM4","IPSL-CM5A-MR","MIROC5","MIROC-ESM","MRI-CGCM3","MPI-ESM-LR")
+gcms <- c("ACCESS1-0","CanESM2","CCSM4","CESM1-CAM5","CNRM-CM5","CSIRO-Mk3-6-0","GFDL-CM3","GISS-E2R","HadGEM2-ES",
+          "INM-CM4","IPSL-CM5A-MR","MIROC5","MIROC-ESM","MRI-CGCM3","MPI-ESM-LR")
 
-gcms <- c("CESM1-CAM5","CNRM-CM5","CSIRO-Mk3-6-0","GFDL-CM3")
+#gcms <- c("CESM1-CAM5","CNRM-CM5","CSIRO-Mk3-6-0","GFDL-CM3")
 scn <- "rcp45"
 per <- 2055
 tic()
@@ -100,12 +100,12 @@ for(mod in gcms){
     datClean
   }
   fname <- paste0("./maps/BCMap_",per,"_",scn,"_",mod,".gpkg")
-  st_write(provClean,fname)
+  st_write(provClean,fname, append = FALSE)
 }
 toc()
 ### historic data - 61-90 or 91 - 2019
 tic()
-per <- "Current91" ##"Normal61"
+per <- "Normal61"## "Current91"#
 provClean <- foreach(dcode = distcodes,.combine = rbind) %do% {
   q1 <- paste0("select siteno,period,bgc_pred,dist_code,geom from historic_sf where dist_code = '",dcode,
                "' and period = '",per,"'")
@@ -133,6 +133,6 @@ provClean <- foreach(dcode = distcodes,.combine = rbind) %do% {
   datClean
 }
 
-st_write(provClean,"./maps/ProvinceCleaned.gpkg")
+st_write(provClean,"./maps/BC_1961-1990.gpkg", append = FALSE)
 toc()
 
