@@ -60,12 +60,12 @@ distcodes <- dbGetQuery(con, "select * from dist_codes")[,1]
 library(doParallel)
 cl <- makeCluster(detectCores()-2)
 registerDoParallel(cl)
-
+##################################
 ###future - currently just looping through models, assuming only 1 time periods and scenario. Could change this
-gcms <- c("ACCESS1-0","CanESM2","CCSM4","CESM1-CAM5","CNRM-CM5","CSIRO-Mk3-6-0","GFDL-CM3","GISS-E2R","HadGEM2-ES",
-          "INM-CM4","IPSL-CM5A-MR","MIROC5","MIROC-ESM","MRI-CGCM3","MPI-ESM-LR")
+# gcms <- c("ACCESS1-0","CanESM2","CCSM4","CESM1-CAM5","CNRM-CM5","CSIRO-Mk3-6-0","GFDL-CM3","GISS-E2R","HadGEM2-ES",
+#           "INM-CM4","IPSL-CM5A-MR","MIROC5","MIROC-ESM","MRI-CGCM3","MPI-ESM-LR")
 
-#gcms <- c("CESM1-CAM5","CNRM-CM5","CSIRO-Mk3-6-0","GFDL-CM3")
+gcms <- c("CESM1-CAM5","CNRM-CM5","CSIRO-Mk3-6-0","GFDL-CM3")
 scn <- "rcp45"
 per <- 2055
 tic()
@@ -99,11 +99,16 @@ for(mod in gcms){
     gc()
     datClean
   }
+  
+  mapClean <- aggregate(provClean[,"geometry"],  by = list(provClean$BGC), FUN = mean) ##union tiles
+  colnames(mapClean)[1] <- "BGC"
+  
   fname <- paste0("./maps/BCMap_",per,"_",scn,"_",mod,".gpkg")
-  st_write(provClean,fname, append = FALSE)
+  st_write(mapClean,fname, append = FALSE)
 }
 toc()
-############
+
+#######################################
 ### Current - 91 - 2019
 tic()
 per <- "Current91"#"Normal61"## 
@@ -134,9 +139,12 @@ provClean <- foreach(dcode = distcodes,.combine = rbind) %do% {
   datClean
 }
 
-st_write(provClean,"./maps/BC_1991-2019.gpkg", append = FALSE)
-toc()
+mapClean <- aggregate(provClean[,"geometry"],  by = list(provClean$BGC), FUN = mean) ##union tiles
+colnames(mapClean)[1] <- "BGC"
 
+st_write(mapClean,"./maps/BC_1991-2019.gpkg", append = FALSE)
+toc()
+###############################################################
 ### Historic - 61-90
 tic()
 per <- "Normal61"## 
@@ -167,5 +175,7 @@ provClean <- foreach(dcode = distcodes,.combine = rbind) %do% {
   datClean
 }
 
-st_write(provClean,"./maps/BC_1961-1990.gpkg", append = FALSE)
+mapClean <- aggregate(provClean[,"geometry"],  by = list(provClean$BGC), FUN = mean) ##union tiles
+colnames(mapClean)[1] <- "BGC"
+st_write(mapClean,"./maps/BC_1961-1990.gpkg", append = FALSE)
 toc()
