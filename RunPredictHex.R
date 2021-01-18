@@ -27,7 +27,7 @@ addVars <- function(dat){
 drv <- dbDriver("PostgreSQL")
 #con <- dbConnect(drv, user = "postgres", host = "localhost",password = "Kiriliny41", port = 5432, dbname = "cciss_data")
 con <- dbConnect(drv, user = "postgres", host = "192.168.1.64",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for local use
-con <- dbConnect(drv, user = "postgres", host = "smithersresearch.ca",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for local use
+#con <- dbConnect(drv, user = "postgres", host = "smithersresearch.ca",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for local use
 
 
 ##WARNING!! Below code will permanently delete tables from the database.
@@ -38,7 +38,7 @@ dbExecute(con, "DROP TABLE future_sf")
 dbExecute(con, "DROP TABLE historic_sf")
 #######################################################################3
 
-load("./BGC_models/WNAv12_Subzone_19_Var_ranger_mah_splitwt.Rdata")
+load("./BGC_models/WNAv12_Subzone_19_Var_ranger_17Jan21.Rdata")
 
 ##helper predict function if the tiles are too big for prediction all at once
 ##doesn't return anything, adds in place
