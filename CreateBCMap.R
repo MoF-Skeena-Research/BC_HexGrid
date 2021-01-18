@@ -103,9 +103,43 @@ for(mod in gcms){
   st_write(provClean,fname, append = FALSE)
 }
 toc()
-### historic data - 61-90 or 91 - 2019
+############
+### Current - 91 - 2019
 tic()
-per <- "Normal61"## "Current91"#
+per <- "Current91"#"Normal61"## 
+provClean <- foreach(dcode = distcodes,.combine = rbind) %do% {
+  q1 <- paste0("select siteno,period,bgc_pred,dist_code,geom from historic_sf where dist_code = '",dcode,
+               "' and period = '",per,"'")
+  cat("Processing",dcode,"\n")
+  dist <- st_read(con, query = q1)
+  testTile <- st_make_grid(dist,n = c(4,4))
+  testTile <- st_as_sf(data.frame(tID = 1:16, geom = testTile))
+  temp <- st_join(dist,testTile)
+  
+  tic()
+  out <- foreach(tid = unique(temp$tID), .combine = rbind, .packages = c("sf","data.table")) %dopar% {
+    datSub <- temp[temp$tID == tid,]
+    distDiss <- aggregate(datSub[,"geom"],  by = list(datSub$bgc_pred), FUN = mean)
+    colnames(distDiss)[1] <- "BGC"
+    datClean <- cleanCrumbs(3, dat = distDiss)
+    datClean <- cleanCrumbs(3, dat = datClean)
+    datClean
+  }
+  toc()
+  datClean <- aggregate(out[,"geometry"],  by = list(out$BGC), FUN = mean)
+  colnames(datClean)[1] <- "BGC"
+  
+  rm(dist,out)
+  gc()
+  datClean
+}
+
+st_write(provClean,"./maps/BC_1991-2019.gpkg", append = FALSE)
+toc()
+
+### Historic - 61-90
+tic()
+per <- "Normal61"## 
 provClean <- foreach(dcode = distcodes,.combine = rbind) %do% {
   q1 <- paste0("select siteno,period,bgc_pred,dist_code,geom from historic_sf where dist_code = '",dcode,
                "' and period = '",per,"'")
@@ -135,4 +169,3 @@ provClean <- foreach(dcode = distcodes,.combine = rbind) %do% {
 
 st_write(provClean,"./maps/BC_1961-1990.gpkg", append = FALSE)
 toc()
-
