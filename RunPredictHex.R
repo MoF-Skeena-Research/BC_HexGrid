@@ -30,7 +30,7 @@ con <- dbConnect(drv, user = "postgres", host = "192.168.1.64",password = "Kiril
 #con <- dbConnect(drv, user = "postgres", host = "smithersresearch.ca",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for local use
 
 
-##WARNING!! Below code will permanently delete tables from the database.
+##WARNING!! Below code will permanently delete existing tables from the database.
 ###########################################################################
 dbExecute(con, "DROP TABLE cciss_future")
 dbExecute(con, "DROP TABLE cciss_historic")
@@ -87,7 +87,7 @@ for(i in futNums){
     
 }
 
-## Normal Period
+## Normal Period 1961-1990
 tableName <- "cciss_historic"
 datDir <- "E:/BGC_Hex/BCHex_ClimateBC/Normal/"
 varImport <- c("NewID","ID2","AHM", "bFFP", "CMD_sp", "DD5", "DD5_sm", 
@@ -109,7 +109,7 @@ for(i in 0:13){
   Y1 <- Y1[Tmax_sm > -100,]
   Y1 <- na.omit(Y1)
   
-  ##Predict future subzones######
+  ##Predict normal period subzones######
   Y1[,BGC.pred := predict(BGCmodel2, Y1[,-c(1:2)])[['predictions']]]
   gc()
   Y1[,Period := "Normal61"]
@@ -121,7 +121,11 @@ for(i in 0:13){
   
 }
 
-## Current Period
+## Current Period 1991-2019
+###This will use a probability model and weight the historic BGC slightly for conservatism.
+### The probabilities will be used in the species selection apps this will Likely need to store the data in the future table as there will now be multiple plausible BGC states
+### In addition however, a majority vote layer (incorporating the present BGC weighting) should also be created for use in the CreateBCMaps function - this could remained stored in the historic period tables
+### For the CreateBCMaps
 tableName <- "cciss_historic"
 datDir <-"E:/BGC_Hex/BCHex_ClimateBC/Current/"
 varImport <- c("ID1","ID2","AHM", "bFFP", "CMD_sp", "DD5", "DD5_sm", 
@@ -142,7 +146,7 @@ for(i in 0:13){
   Y1 <- Y1[Tmax_sm > -100,]
   Y1 <- na.omit(Y1)
   
-  ##Predict future subzones######
+  ##Predict 1991-2019 subzones######
   Y1[,BGC.pred := predict(BGCmodel2, Y1[,-c(1:2)])[['predictions']]]
   gc()
   Y1[,Period := "Current91"]
