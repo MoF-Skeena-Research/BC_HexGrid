@@ -12,8 +12,8 @@ vertDist <- function(x){(sideLen(x)*3)/2}
 sideLen <- function(x){x/sqrt(3)}
 
 #bgc <- st_read(dsn = "~/CommonTables/WNA_BGC_v12_12Oct2020.gpkg")
-bgc <- st_read(dsn = "D:/CommonTables/BGC_maps/WNA_BGC_v12_12Oct2020.gpkg")
-bgc <- bgc[is.na(bgc$State),c("BGC")]
+bgc <- st_read(dsn = "~/CommonTables/BC_BGCv12.gpkg")
+#bgc <- bgc[is.na(bgc$State),c("BGC")]
 
 ##This is what I used to create the new hex grid
 dem <- raster("./BigDat/BC_25m_DEM_WGS84.tif")
@@ -30,23 +30,24 @@ grdAll <- st_make_grid(BC,cellsize = 400, square = F, flat_topped = F) ##make gr
 st_write(grdAll, dsn = "TempGrid400m.gpkg")
 
 BC <- st_read("./BC_Simplified.gpkg") ##actual outline
-grdAll <- st_read("./BC_Hex400m.gpkg")
-grdAll$geom <- grdAll$geom + c(-167,-95) ##adjust so matches old centroids
-grdAll$siteno <- 1:nrow(grdAll)
-grdAll <- grdAll["siteno"]
-st_write(grdAll,dsn = "./BC_HexPoly400m.gpkg", driver = "GPKG")
+grdAll <- st_read("~/HexGrid_Tile/BC_BiggerHex.gpkg")
+# grdAll$geom <- grdAll$geom + c(-167,-95) ##adjust so matches old centroids
+# grdAll$siteno <- 1:nrow(grdAll)
+# grdAll <- grdAll["siteno"]
+# st_write(grdAll,dsn = "./BC_HexPoly400m.gpkg", driver = "GPKG")
 
 ###intersect with old points
 Rcpp::sourceCpp("./C_Helper.cpp")
-grdAll <- st_read(dsn = "./BigDat/HexGrd400m.gpkg")
-grdAll <- grdAll["id"]
-grdAll$id <- 1:nrow(grdAll)
-oldPoints <- st_read("/media/kiridaust/MrBig/BCGrid/HexPts400.gpkg")##old centre points
+grdAll <- st_read(dsn = "BC_HexPoly400m.gpkg")
+
+oldPoints <- st_read("./RCB_Hex400_Points.gpkg")##old centre points
 colnames(oldPoints)[1] <- "OldID"
 st_crs(grdAll) <- 3005
 temp <- st_intersects(grdAll,oldPoints,sparse = T) ##faster than join
 test <- unlist_sgbp(temp) ##c++ function
-crosswalk <- data.table(NewID = grdAll$siteno, OldID = test)
+fwrite(test,"RCB_CrosswalkTable.csv")
+
+crosswalk <- data.table(NewID = grdAll$ID, OldID = test)
 crosswalk[OldID == 0, OldID := NA]
 pntsNeeded <- crosswalk[is.na(OldID),NewID]
 
@@ -57,15 +58,25 @@ dem <- raster("D:/CommonTables/DEMs/BC_25m_DEM_WGS84.tif")
 BC <- st_read(dsn = "D:/CommonTables/BC_AB_US_Shp/BC_Province_Outline_Clean.gpkg")
 BC <- st_buffer(BC, dist = 0)
 BC <- ms_simplify(BC, keep = 0.2)
-grdAll <- st_make_grid(BC,cellsize = 4000, square = F, flat_topped = F)
+st_layers("~/CommonTables/ForestRegions.gpkg")
+regions <- st_read("~/CommonTables/ForestRegions.gpkg","ForestRegions_clipped")
+rcb <- regions[regions$ORG_UNIT == "RCB","ORG_UNIT"]
+rcb <- ms_simplify(rcb,keep = 0.05,sys = T)
+
+bb <- st_as_sfc(st_bbox(rcb))
+grdAll <- st_make_grid(bb,cellsize = 400, square = F, flat_topped = F)
+grdAll <- st_as_sf(data.frame(ID = 1:length(grdAll),geom = grdAll))
 ptsAll <- st_centroid(grdAll)
 grdPts <- st_sf(ID = seq(length(ptsAll)), geometry = ptsAll)
-st_write(grdPts, dsn = "./BigDat/HexPts400.gpkg", layer = "HexPts400", driver = "GPKG", overwrite = T, append = F)
+st_write(ptsAll, dsn = "./RCB_Hex400_Points.gpkg", layer = "HexPts400", driver = "GPKG", overwrite = T, append = F)
 
 ptsAll <- st_centroid(grdAll)
-st_write(ptsAll, dsn = "./BC_HexPoints400m.gpkg", driver = "GPKG", overwrite = T, append = F)
+st_write(grdAll, dsn = "./RCB_Hex400_Poly.gpkg", driver = "GPKG", overwrite = T, append = F)
 
 ptsNew <- ptsAll[ptsAll$siteno %in% pntsNeeded,]
+
+grdPts <- st_read(dsn = "BC_HexPoints400m.gpkg")
+
 
 tiles <- st_make_grid(BC, cellsize = c(250000,vertDist(307000)))
 plot(tiles)
@@ -75,12 +86,16 @@ tilesID <- st_as_sf(data.frame(tID = 1:length(tiles)),geom = tiles)
 tilesUse <- st_join(tilesID,BC)
 tilesUse <- tilesUse[!is.na(tilesUse$State),]
 tilesUse <- tilesUse[,"tID"]
+tilesUse <- unique(tilesUse)
 library(mapview)
 mapview(BC)+
   tilesUse
 
 tilesUse$tID <- 1:nrow(tilesUse)
-st_write(tilesUse,dsn = "TileOutlines.gpkg")
+st_write(tilesUse,dsn = "TileOutlines.gpkg",overwrite = T, append = F)
+bgc <- st_zm(bgc)
+bgc <- st_cast(bgc,"MULTIPOLYGON")
+testGrd <- st_zm(testGrd)
 
 datOut <- foreach(tile = tilesUse$tID, .combine = rbind) %do% {
   cat("Processing tile",tile,"... \n")
@@ -88,8 +103,8 @@ datOut <- foreach(tile = tilesUse$tID, .combine = rbind) %do% {
   testGrd <- st_intersection(grdPts, testTile)
   if(nrow(testGrd) > 1){
     grdBGC <- st_join(testGrd,bgc)
-    grdBGC$el <- raster::extract(dem, grdBGC)
     grdBGC <- st_transform(grdBGC, 4326)
+    grdBGC$el <- raster::extract(dem, grdBGC)
     out <- cbind(st_drop_geometry(grdBGC),st_coordinates(grdBGC)) %>% as.data.table()
     out <- out[,.(ID1 = ID, ID2 = BGC, lat = Y, long = X, el)]
     out[,TileNum := tile]
@@ -100,9 +115,10 @@ datOut <- foreach(tile = tilesUse$tID, .combine = rbind) %do% {
 
 }
 
+datOut <- out
 dat <- unique(datOut, by = "ID1")
 dat <- dat[!is.na(ID2),]
-fwrite(dat, "AllHexLocations.csv")
+fwrite(dat, "RCB_ClimBC.csv",eol = "\r\n")
 tileID <- dat[,.(ID1,TileNum)]
 fwrite(tileID,"TileIDs.csv")
 
@@ -112,6 +128,36 @@ for(i in unique(tileID$TileNum)){
   dat2 <- dat2[complete.cases(dat2),]
   fwrite(dat2, paste0("./Output/Tile",i,"_In.csv"), eol = "\r\n")
 }
+
+### which IDs have been successfully download by climBC
+# ids <- fread("/media/data/ClimateBC_Data/Tile12_In_280 GCMsMSY.csv", select = "ID1")
+tileNum <- 13
+idDownload <- fread("/media/data/ClimateBC_Data/Tile12_CutTest.csv")
+ids <- idDownload$ID1
+length(ids[ids == 889155])
+
+##
+maxSize <- 200000
+tiles <- c(13:22)
+for(tile in tiles){
+  dat <- fread(paste0("./Output/Tile",tile,"_In.csv"))
+  n = nrow(dat)
+  brks <- seq(1,n,by = maxSize)
+  brks <- c(brks,n)
+  i = 0
+  for(j in 1:(length(brks)-1)){
+    i = i+1
+    temp <- dat[brks[j]:brks[j+1],]
+    fwrite(temp, file = paste0("./Output/Tile",tile,"_",i,".csv"))
+  }
+  
+}
+
+library(data.table)
+dat <- fread("/media/data/ClimateBC_Data/Tile14_ID.csv")$ID1
+dat <- as.integer(dat)
+testID <- dat[length(dat)]
+length(dat[dat == testID])
 
 library(climatenaAPI)
 library(tictoc)
