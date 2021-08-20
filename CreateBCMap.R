@@ -12,11 +12,12 @@ library(tictoc)
 ##connect to database
 drv <- dbDriver("PostgreSQL")
 con <- dbConnect(drv, user = "postgres", host = "192.168.1.64",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for local use
-con <- dbConnect(drv, user = "postgres", host = "localhost",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ## for local machine
-con <- dbConnect(drv, user = "postgres", host = "smithersresearch.ca",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for external use
+#con <- dbConnect(drv, user = "postgres", host = "localhost",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ## for local machine
+#con <- dbConnect(drv, user = "postgres", host = "smithersresearch.ca",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for external use
 
 cleanCrumbs <- function(minNum = 3, dat){
   minArea <- minNum*138564.1
+  units(minArea) <- "m^2"
   dat <- st_cast(dat,"MULTIPOLYGON") %>% st_cast("POLYGON")
   dat$Area <- st_area(dat)
   dat$ID <- seq_along(dat$BGC)
@@ -59,19 +60,19 @@ distcodes <- dbGetQuery(con, "select * from dist_codes")[,1]
 library(doParallel)
 cl <- makeCluster(detectCores()-2)
 registerDoParallel(cl)
-
+##################################
 ###future - currently just looping through models, assuming only 1 time periods and scenario. Could change this
-##GCMs <- c("ACCESS1-0","CanESM2","CCSM4","CESM1-CAM5","CNRM-CM5","CSIRO-Mk3-6-0","GFDL-CM3","GISS-E2R","HadGEM2-ES",
-##          "INM-CM4","IPSL-CM5A-MR","MIROC5","MIROC-ESM","MRI-CGCM3","MPI-ESM-LR")
+ gcms <- c("ACCESS1-0","CanESM2","CCSM4","GISS-E2R","HadGEM2-ES",
+           "INM-CM4","IPSL-CM5A-MR","MIROC5","MIROC-ESM","MRI-CGCM3","MPI-ESM-LR")#,"CESM1-CAM5","CNRM-CM5","CSIRO-Mk3-6-0","GFDL-CM3"
 
-gcms <- c("CESM1-CAM5","CNRM-CM5","CSIRO-Mk3-6-0","GFDL-CM3")
+#gcms <- c("CESM1-CAM5","CNRM-CM5","CSIRO-Mk3-6-0","GFDL-CM3")
 scn <- "rcp45"
 per <- 2055
 tic()
 for(mod in gcms){
   provClean <- foreach(dcode = distcodes,.combine = rbind) %do% { ##for each district
-    q1 <- paste0("select siteno,bgc_pred,dist_code,geom from cciss_fut_sf where dist_code = '",dcode,
-                 "' and futureperiod = '",per,"' and scenario = '",scn,"'and gcm = '",mod,"'")
+    q1 <- paste0("select siteno,bgc_pred,dist_code,geom from future_sf where dist_code = '",dcode,
+                 "' and scenario = '",scn,"'and gcm = '",mod,"' and futureperiod = '",per,"'")
     cat("Processing",dcode,"\n")
     ##pull data
     dist <- st_read(con, query = q1)
@@ -98,14 +99,21 @@ for(mod in gcms){
     gc()
     datClean
   }
+  
+  mapClean <- aggregate(provClean[,"geometry"],  by = list(provClean$BGC), FUN = mean) ##union tiles
+  colnames(mapClean)[1] <- "BGC"
+  
   fname <- paste0("./maps/BCMap_",per,"_",scn,"_",mod,".gpkg")
-  st_write(provClean,fname)
+  st_write(mapClean,fname, append = FALSE)
 }
 toc()
-### historic data - 61-90 or 91 - 2019
-per <- "Current91" ##"Normal61"
+
+#######################################
+### Current - 91 - 2019
+tic()
+per <- "Current91"#"Normal61"## 
 provClean <- foreach(dcode = distcodes,.combine = rbind) %do% {
-  q1 <- paste0("select siteno,period,bgc_pred,dist_code,geom from norm_comb_sf where dist_code = '",dcode,
+  q1 <- paste0("select siteno,period,bgc_pred,dist_code,geom from historic_sf where dist_code = '",dcode,
                "' and period = '",per,"'")
   cat("Processing",dcode,"\n")
   dist <- st_read(con, query = q1)
@@ -131,6 +139,43 @@ provClean <- foreach(dcode = distcodes,.combine = rbind) %do% {
   datClean
 }
 
-st_write(provClean,"./maps/ProvinceCleaned.gpkg")
+mapClean <- aggregate(provClean[,"geometry"],  by = list(provClean$BGC), FUN = mean) ##union tiles
+colnames(mapClean)[1] <- "BGC"
 
+st_write(mapClean,"./maps/BC_1991-2019.gpkg", append = FALSE)
+toc()
+###############################################################
+### Historic - 61-90
+tic()
+per <- "Normal61"## 
+provClean <- foreach(dcode = distcodes,.combine = rbind) %do% {
+  q1 <- paste0("select siteno,period,bgc_pred,dist_code,geom from historic_sf where dist_code = '",dcode,
+               "' and period = '",per,"'")
+  cat("Processing",dcode,"\n")
+  dist <- st_read(con, query = q1)
+  testTile <- st_make_grid(dist,n = c(4,4))
+  testTile <- st_as_sf(data.frame(tID = 1:16, geom = testTile))
+  temp <- st_join(dist,testTile)
+  
+  tic()
+  out <- foreach(tid = unique(temp$tID), .combine = rbind, .packages = c("sf","data.table")) %dopar% {
+    datSub <- temp[temp$tID == tid,]
+    distDiss <- aggregate(datSub[,"geom"],  by = list(datSub$bgc_pred), FUN = mean)
+    colnames(distDiss)[1] <- "BGC"
+    datClean <- cleanCrumbs(3, dat = distDiss)
+    datClean <- cleanCrumbs(3, dat = datClean)
+    datClean
+  }
+  toc()
+  datClean <- aggregate(out[,"geometry"],  by = list(out$BGC), FUN = mean)
+  colnames(datClean)[1] <- "BGC"
+  
+  rm(dist,out)
+  gc()
+  datClean
+}
 
+mapClean <- aggregate(provClean[,"geometry"],  by = list(provClean$BGC), FUN = mean) ##union tiles
+colnames(mapClean)[1] <- "BGC"
+st_write(mapClean,"./maps/BC_1961-1990.gpkg", append = FALSE)
+toc()
