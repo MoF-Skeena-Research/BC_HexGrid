@@ -14,74 +14,38 @@ require(RPostgreSQL)
 library(disk.frame)
 require(RPostgres)
 
+dat1 <- fread("/media/data/ClimateBC_Data/SelectVars/Tile9_Y_SV.csv")
+dat2 <- fread("/media/data/ClimateBC_Data/SelectVars/Tile9_S_SV.csv")
+datYS <- cbind(dat1,dat2)
+datYS <- datYS[Year != "GFDL-ESM4_ssp585_2061-2080.gcm",]
+dat2 <- fread("/media/data/ClimateBC_Data/SelectVars/Tile9_1_M_SV.csv")
+dat3 <- fread("/media/data/ClimateBC_Data/SelectVars/Tile9_2_M_SV.csv")
+dat4 <- rbind(dat2,dat3)
+dat4 <- dat4[Year != "GFDL-ESM4_ssp585_2061-2080.gcm",]
+dat4[,c("Year","ID1") := NULL]
+datYSM <- cbind(datYS,dat4)
+rm(dat1,dat2,datYS,dat3,dat4)
+gc()
+fwrite(datYSM,"Tile8_AllDat.csv")
+
+dat <- fread("./Output/Tile14_2.csv")
+dat <- fwrite(dat,"./Output/Tile14_2_fix.csv",eol = "\r\n")
 
 monthNms <- c("PPT05","PPT06","PPT07","PPT08","PPT09","CMD07")
+colMonth <- c(47,48,49,50,51,157)
+annNms <- c("AHM","CMI","DD5","NFFD","PAS","SHM","CMD")
+colAnn <- c(1,2,3,13,14,16,19,23,28,30)
+seasNms <- c("PPT_at","PPT_wt","DD_0_at","DD_0_wt")
+colSeas <- c(19,22,27,30)
+allNms <- c(monthNms,annNms,seasNms)
 
-monthDat <- csv_to_disk.frame("~/BC_HexGrid/ClimBC_Out/RCB_ClimBC_260 GCMsM.csv",
-                              in_chunk_size = 1000000,
-                              backend = "data.table",
-                              chunk_reader = "readLines",
-                              overwrite = T)
-
-test <- fread("~/BC_HexGrid/ClimBC_Out/MonthSelect.csv")
-test <- fread("ClimBC_Out/RCB_ClimBC_Normal_1991_2020MSY.csv", nrows = 0)
-##this part for updating ID on climateBC outputs
-# IDCross <- fread("Old_NewHexCrosswalk.csv")
-# varNames <- fread(paste0("~/ClimBC_Tiles/Tile",1,"_Out.csv"), nrows = 0)
-# varNames <- colnames(varNames)
-# varNames <- c(varNames[c(1:6,175:253)],"PPT05", "PPT06", "PPT07", "PPT08", 
-#               "PPT09","Tmax07","DD5_05","DD5_06","DD5_07","DD5_08","DD5_09",
-#               "CMD05","CMD06","CMD07","CMD08","CMD09","Tave10","Tave04")
-# deleteDT <- function(DT, del.idxs) {           # pls note 'del.idxs' vs. 'keep.idxs'
-#   keep.idxs <- setdiff(DT[, .I], del.idxs);  # select row indexes to keep
-#   cols = names(DT);
-#   DT.subset <- data.table(DT[[1]][keep.idxs]); # this is the subsetted table
-#   setnames(DT.subset, cols[1]);
-#   for (col in cols[2:length(cols)]) {
-#     DT.subset[, (col) := DT[[col]][keep.idxs]];
-#     DT[, (col) := NULL];  # delete
-#   }
-#   return(DT.subset);
-# }
-# 
-# dat <- fread("~/ClimBC_Tiles/NormalData/Tile6_In_Normal_1961_1990MSY.csv", select = "ID1")
-# dat2 <- fread("~/ClimBC_Tiles/Tile14_Out.csv", select = "ID1")
-# dat2 <- unique(dat2)
-# 
-# for(i in c(2:13)){
-#   dat <- fread(paste0("~/ClimBC_Tiles/NormalData/Tile",i,"_In_Normal_1961_1990MSY.csv"))
-#   dat[IDCross, NewID := i.NewID, on = c(ID1 = "OldID")]
-#   dat[,ID1 := NULL]
-#   nms <- colnames(dat)
-#   nms <- nms[c(1,length(nms),2:(length(nms)-1))]
-#   setcolorder(dat, nms)
-#   toDelete <- which(is.na(dat$NewID))
-#   dat <- deleteDT(dat,toDelete)
-#   gc()
-#   fwrite(dat,file = paste0("~/Desktop/BCHex_ClimateBC/Normal/Tile",i,"_Norm.csv"))
-#   rm(dat)
-#   gc()
-# }
-# 
-# decs <- c("1991_2000","2001_2010","2011_2019")
-# for(i in c(2:13)){
-#   dat <- foreach(j = decs, .combine = rbind) %do% {
-#     temp <- fread(paste0("~/ClimBC_Tiles/CurrentData/Tile",i,"_In_Decade_",j,"MSY.csv"))
-#     #temp <- fread(paste0("~/ClimBC_Tiles/CurrentData/NewPnts_In_Decade_",j,"MSY.csv"))
-#   }
-#   dat <- dat[,lapply(.SD, mean), by = .(ID1,ID2)]
-#   dat[IDCross, NewID := i.NewID, on = c(ID1 = "OldID")]
-#   dat[,ID1 := NULL]
-#   nms <- colnames(dat)
-#   nms <- nms[c(1,length(nms),2:(length(nms)-1))]
-#   setcolorder(dat, nms)
-#   toDelete <- which(is.na(dat$NewID))
-#   dat <- deleteDT(dat,toDelete)
-#   gc()
-#   fwrite(dat,file = paste0("~/Desktop/BCHex_ClimateBC/Current/Tile",i,"_Curr.csv"))
-#   rm(dat)
-#   gc()
-# }
+fread("BC_HexGrid/ClimBC_Out/Tile8_In_280 GCMsM.csv",nrows = 1)
+test <- fread("BC_HexGrid/ClimBC_Out/Tile14_1_280_GCMsMSY.csv", select = "Year")
+finished <- unique(test$Year)
+testY <- fread("/media/data/ClimateBC_Data/Tile9_In_280_GCMsM.csv", select = monthNms)
+dput(which(names(testY) %in% monthNms))
+cols <- c(1L, 2L, 3L, 47L, 48L, 49L, 50L, 51L, 157L, 199L, 202L, 207L, 210L, 253L, 
+          254L, 256L, 259L, 263L, 268L, 270L)
 
 
 addVars <- function(dat){
@@ -100,9 +64,21 @@ addVars <- function(dat){
 drv <- Postgres()
 drv <- dbDriver("PostgreSQL")
 con <- dbConnect(drv, user = "postgres", host = "localhost",password = "Kiriliny41", port = 5432, dbname = "cciss_data")
-con <- dbConnect(drv, user = "postgres", host = "138.197.168.220",password = "postgres", port = 5432, dbname = "cciss") ### for local use
+con <- dbConnect(drv, user = "postgres", host = "138.197.168.220",password = "PowerOfBEC", port = 5432, dbname = "cciss") ### for local use
 
-# grd <- st_read("BC_HexPoly400m.gpkg")
+futSiteno <- dbGetQuery(con, "select * from temp_siteno")
+futSiteno <- as.data.table(futSiteno)
+futSiteno[,InDB := TRUE]
+
+grd <- st_read("~/BC_HexGrid/BC_HexPoints400m.gpkg")
+grd <- as.data.table(grd)
+grd[futSiteno,InDB := i.InDB, on = "siteno"]
+grd2 <- grd[(InDB),]
+grd2 <- st_as_sf(grd2)
+grd2 <- grd2["siteno"]
+st_write(grd2,dsn = "GrdPointsInDB.gpkg", layer = "GrdPoints", format = "GPKG")
+
+
 # st_write(grd, dsn = con,"hex_grid")
 # districts <- st_read(file.choose())
 # districts <- districts[,c("DISTRICT_N","ORG_UNIT","REGION_ORG")]
@@ -120,7 +96,7 @@ con <- dbConnect(drv, user = "postgres", host = "138.197.168.220",password = "po
 # setnames(crosstab,c("new_id","old_id"))
 # dbWriteTable(con, "id_crosswalk", crosstab, row.names = F)
 
-load("./WNAv12_Subzone_11_Var_ranger_8July21.Rdata")
+load("~/BC_HexGrid/WNAv12_Subzone_11_Var_ranger_6Sept21.Rdata")
 
 ##WARNING!! Below code will permanently delete existing tables from the database.
 ###########################################################################
@@ -140,59 +116,99 @@ tile_predict <- function(Y1, maxSize = 6000000){
   brks <- c(brks,n)
   Y1[,BGC.pred := NA_character_]
   for(j in 1:(length(brks)-1)){
-    Y1[brks[j]:brks[j+1],BGC.pred := predict(BGCmodel2, Y1[brks[j]:brks[j+1],-c(1:3)])[['predictions']]]
+    Y1[brks[j]:brks[j+1],BGC.pred := predict(BGCmodel2, Y1[brks[j]:brks[j+1],-c(1:3)],num.threads = 14)[['predictions']]]
   }
   TRUE
 }
 
+##files with all variables
 setwd("/media/data/ClimateBC_Data/")
-for(tile in 15:22){
-  fname <- paste0("Tile",tile,"_In_280_GCMsMSY.csv")
-  system(paste0("cut -d, -f2 ",fname," > Tile",tile,"_ID.csv"))
+setwd("./ClimBC_Out/")
+files <- list.files("./ClimBC_Out/")
+allVars <- files[grep("Tile14",files)]
+filesUse <- allVars[grep("Tile21|Tile22|Tile23|Tile17|Tile18|Tile13",allVars)]
+for(tile in allVars){
+  cat(".")
+  outname <- gsub("MSY.*","",tile)
+  system(paste0("cut -d, -f 1,2,3,47,48,49,50,51,157,199,202,207,210,253,254,256,259,263,268,270 ",
+                tile," > ",outname,"_SV.csv"))
 }
 
-dat <- vroom("./ClimBC_Out/Tile10_In_224 GCMsMSY.csv")
+##Year
+allVars <- files[grep("GCMsY",files)]
+for(tile in allVars){
+  cat(".")
+  outname <- gsub("_.*","",tile)
+  system(paste0("cut -d, -f 1,2,3,13,14,16,19,23,28,30 ",
+                tile," > SelectVars/",outname,"_Y_SV.csv"))
+}
+
+##seas
+allVars <- files[grep("GCMsS",files)]
+for(tile in allVars){
+  cat(".")
+  outname <- gsub("_.*","",tile)
+  system(paste0("cut -d, -f 19,22,27,30 ",
+                tile," > SelectVars/",outname,"_S_SV.csv"))
+}
+
+##month
+allVars <- files[grep("GCMsM.csv",files)]
+setwd("~/BC_HexGrid/ClimBC_Out/")
+files <- list.files()
+allVars <- files[grep("GCMsM.csv|Month",files)]
+tile <- "Tile23_In_280_GCMsM.csv"
+for(tile in allVars){
+  cat(".")
+  outname <- gsub("_In.*","",tile)
+  system(paste0("cut -d, -f 1,2,47,48,49,50,51,157 ",
+                tile," > ",outname,"_M_SV.csv"))
+}
+
+setwd("/media/data/ClimateBC_Data/SelectVars/temp")
+tileNums <- c(8,9,24,25)
+for(tile in tileNums){
+  yNm <- paste0("Tile",tile,"_Y_SV.csv")
+  sNm <- paste0("Tile",tile,"_S_SV.csv")
+  mNm <- paste0("Tile",tile,"_M_SV.csv")
+  outNm <- paste0("Tile",tile,"_SV.csv")
+  system(paste0("paste -d ',' ",yNm," ",sNm," ",mNm," > ",outNm))
+}
+
+setwd("~/BC_HexGrid/")
+d1 <- fread("Tile14_1_133__SV.csv")
+d1 <- d1[Year != "GFDL-ESM4_ssp245_2041-2060.gcm",]
+d2 <- fread("Tile14_1_Part2__SV.csv")
+Tile1 <- rbind(d1,d2)
+
+d1 <- fread("Tile14_2_133__SV.csv")
+d1 <- d1[Year != "GFDL-ESM4_ssp245_2041-2060.gcm",]
+d2 <- fread("Tile14_2_fix_Part2__SV.csv")
+Tile2 <- rbind(d1,d2)
+
+Tile3 <- fread("Tile14_3_280_GCMs_SV.csv")
+
+dat <- rbind(Tile1,Tile2,Tile3)
+fwrite(dat,"Tile14_Final.csv")
+##done 11,12,13,15,16,17,18,19,20,21,22,7,1,2,3,4,5
+setwd("/media/data/ClimateBC_Data/SelectVars/")
+files <- list.files()
+filesUse <- files[-(1:2)]
 ## future periods
-tableName <- "cciss_future"
-datDir <- "E:/BGC_Hex/BCHex_ClimateBC/Future/"
-futNums <- c(0:5,7,8,10:19) ##tiles 6 and 9 are too big, I split them up into 14:19
-for(i in futNums){
-  cat("Processing tile",i,"... \n")
-  varImport <- c("ID1","ID2","AHM", "CMD_sp", "DD5", "DD5_sm", 
-                 "DD5_sp", "MCMT", "MWMT", "NFFD", "PAS_sp", 
-                 "PAS_wt", "SHM", "PPT_at","PPT_wt","PPT05", "PPT06", "PPT07", "PPT08", 
-                 "PPT09", "CMD07","CMD","DD_0_at","DD_0_wt","CMI","PAS")
+tableName <- "cciss_future12"
+#datDir <- "E:/BGC_Hex/BCHex_ClimateBC/Future/"
+#futNums <- c(0:5,7,8,10:19) ##tiles 6 and 9 are too big, I split them up into 14:19
+for(input in filesUse){
+  cat("Processing tile",input,"... \n")
+  # varImport <- c("Year", "ID1","ID2","AHM", "CMD_sp", "DD5", "DD5_sm", 
+  #                "DD5_sp", "MCMT", "MWMT", "NFFD", "PAS_sp", 
+  #                "PAS_wt", "SHM", "PPT_at","PPT_wt","PPT05", "PPT06", "PPT07", "PPT08", 
+  #                "PPT09", "CMD07","CMD","DD_0_at","DD_0_wt","CMI","PAS")
   # if(i == 0) varImport[2] <- "ID1"
   # dat <- fread(paste0(datDir,"Tile",i,"_Fut.csv"),select = varImport)
-  loc <- "~/BC_HexGrid/ClimBC_Out/RCB_ClimBC_260 GCMs"
-  allNms <- c("M.csv","S.csv","Y.csv")
-  nms <- fread(paste0(loc,allNms[3]),nrows = 0)
-  yearNms <- varImport[varImport %in% names(nms)]
-  yearDat <- fread(paste0(loc,allNms[3]),select = yearNms)
-  seasNms <- c("PPT_at","PPT_wt","DD_0_at","DD_0_wt")
-  seasDat <- fread(paste0(loc,allNms[2]),select = seasNms)
-  dat <- cbind(yearDat,seasDat)
-  rm(yearDat,seasDat)
-  gc()
-  monthDat <- fread("ClimBC_Out/MonthSelect.csv")
-  gc()
-  dat[,`:=`(Year = monthDat$Year,
-            PPT05 = monthDat$PPT05,
-            PPT06 = monthDat$PPT06,
-            PPT07 = monthDat$PPT07,
-            PPT08 = monthDat$PPT08,
-            PPT09 = monthDat$PPT09,
-            CMD07 = monthDat$CMD07)]
-  rm(monthDat)
-  gc()
-  fwrite(dat[1:105000000,],file = "RCB_Tile1.csv")
-  gc()
-  fwrite(dat[105000001:nrow(dat),],file = "RCB_Tile2.csv")
-  gc()
-  addVars(dat)
-  gc()
+
   
-  dat <- fread("ClimBC_Out/RCB_Tile1.csv")
+  dat <- fread(input)
   addVars(dat)
   gc()
   vars <- BGCmodel2[["forest"]][["independent.variable.names"]]
@@ -200,65 +216,78 @@ for(i in futNums){
   setnames(dat,old = c("Year","ID1","ID2"), new = c("Model","SiteNo","BGC"))
   setcolorder(dat,varList)
 
-  Y1 <- na.omit(Y1)
+  dat <- na.omit(dat)
   
   ##Predict future subzones######
   tile_predict(dat)
   gc()
   dat[,c("CMD.total", "DD_delayed", "AHM", 
          "CMDMax", "CMI", "DD5", "NFFD", "PAS", "PPT_JAS", "PPT_MJ", "SHM", 
-         "MCMT", "MWMT", "CMD", "PPT_at", "PPT_wt", "DD_0_at", "DD_0_wt", 
+         "CMD", "PPT_at", "PPT_wt", "DD_0_at", "DD_0_wt", 
          "PPT05", "PPT06", "PPT07", "PPT08", "PPT09", "CMD07", "PPT.dormant","CMD.def") := NULL]
   gc()
+  dat <- dat[!grepl("ensemble",Model),]
   dat[,c("GCM","Scenario","FuturePeriod") := tstrsplit(Model, split = "_", fixed = T)]
   dat[,FuturePeriod := gsub(".gcm","",FuturePeriod)]
   dat[,Model := NULL]
   setcolorder(dat,c("GCM","Scenario","FuturePeriod","SiteNo","BGC","BGC.pred"))
-  setnames(dat, c("gcm","scenario","futureperiod","OldIdx","bgc","bgc_pred"))
-  dat[newID,siteno := i.Index, on = "OldIdx"]
-  dat[,OldIdx := NULL]
+  setnames(dat, c("gcm","scenario","futureperiod","siteno","bgc","bgc_pred"))
+  # dat[newID,siteno := i.Index, on = "OldIdx"]
+  # dat[,OldIdx := NULL]
   setcolorder(dat,c("gcm","scenario","futureperiod","siteno","bgc","bgc_pred"))
-  dat <- fread("RCB_FuturePreds_Tile1.csv")
-  dbWriteTable(con, "test_future", dat,row.names = F, append = T)
-  rm(Y1,dat)
+  print(nrow(dat))
+  con <- dbConnect(drv, user = "postgres", host = "138.197.168.220",password = "PowerOfBEC", port = 5432, dbname = "cciss") ### for local use
+  dbWriteTable(con, "cciss_future12", dat,row.names = F, append = T)
+  dbDisconnect(con)
+  rm(dat)
   gc()
-    
 }
 
 ##Current Period Probability
-load("./WNAv12_Subzone_12_Var_ranger_prob.Rdata")
+setwd("~/BC_HexGrid/")
+load("./WNAv12_Subzone_11_Var_ranger_probability_24Aug21.Rdata")
 varImport <- c("ID1","ID2","AHM", "CMD_sp", "DD5", "DD5_sm", 
                "DD5_sp", "MCMT", "MWMT", "NFFD", "PAS_sp", 
                "PAS_wt", "SHM", "PPT_at","PPT_wt","PPT05", "PPT06", "PPT07", "PPT08", 
                "PPT09", "CMD07","CMD","DD_0_at","DD_0_wt","CMI","PAS","EXT","bFFP")
-dat <- fread("~/BC_HexGrid/ClimBC_Out/RCB_ClimBC_Normal_1991_2020MSY.csv",select = varImport)
-addVars(dat)
-vars <- BGCmodel_prob[["forest"]][["independent.variable.names"]]
-varList = c("SiteNo", "BGC", vars)
-setnames(dat, old = c("ID1","ID2"), new = c("SiteNo", "BGC"))
-Y1 <- dat
-Y1=Y1[,..varList]
-Y1 <- na.omit(Y1)
+files <- list.files("./ClimBC_Out/")
+setwd("~/BC_HexGrid/ClimBC_Out/")
+for(input in filesUse){
+  cat("Processing",input)
+  dat <- fread(input,select = varImport)
+  addVars(dat)
+  vars <- BGCmodel2p[["forest"]][["independent.variable.names"]]
+  varList = c("SiteNo", "BGC", vars)
+  setnames(dat, old = c("ID1","ID2"), new = c("SiteNo", "BGC"))
+  Y1 <- dat
+  Y1=Y1[,..varList]
+  Y1 <- na.omit(Y1)
+  
+  grid.pred <- predict(BGCmodel2p, data = Y1[,-c(1:2)])
+  predMat <- grid.pred$predictions
+  predMat <- as.data.table(predMat) 
+  predMat[,`:=`(SiteNo = Y1$SiteNo,BGC = Y1$BGC)]
+  predMat <- melt(predMat, id.vars = c("SiteNo","BGC"), variable.name = "Pred",value.name = "Prob")
+  predMat <- predMat[Prob > 0.1,]
+  setorder(predMat,SiteNo)
+  predMat[,ProbAdj := Prob/sum(Prob), by = SiteNo]
+  predMat[,Prob := NULL]
+  #predMat[bgcID, bgc := i.ID2, on = c(ID = "ID1")]
+  predMat[,period := "1991"]
+  # setnames(predMat,old = "SiteNo",new = "OldIdx")
+  # 
+  # newID <- fread("RCB_CrosswalkTable.csv")
+  # predMat[newID, SiteNo := i.Index, on = "OldIdx"]
+  # predMat[,OldIdx := NULL]
+  setcolorder(predMat, c("SiteNo","period","BGC","Pred","ProbAdj"))
+  setnames(predMat,c("siteno","period","bgc","bgc_pred","prob"))
+  con <- dbConnect(drv, user = "postgres", host = "138.197.168.220",password = "PowerOfBEC", port = 5432, dbname = "cciss") ### for local use
+  dbWriteTable(con, "cciss_prob12", predMat,row.names = F, append = T)
+  dbDisconnect(con)
+  rm(dat,Y1,grid.pred,predMat)
+  gc()
+}
 
-grid.pred <- predict(BGCmodel_prob, data = Y1[,-c(1:2)])
-predMat <- grid.pred$predictions
-predMat <- as.data.table(predMat) 
-predMat[,`:=`(SiteNo = Y1$SiteNo,BGC = Y1$BGC)]
-predMat <- melt(predMat, id.vars = c("SiteNo","BGC"), variable.name = "Pred",value.name = "Prob")
-predMat <- predMat[Prob > 0.1,]
-setorder(predMat,SiteNo)
-predMat[,ProbAdj := Prob/sum(Prob), by = SiteNo]
-predMat[,Prob := NULL]
-#predMat[bgcID, bgc := i.ID2, on = c(ID = "ID1")]
-predMat[,period := "1991-2020"]
-setnames(predMat,old = "SiteNo",new = "OldIdx")
-
-newID <- fread("RCB_CrosswalkTable.csv")
-predMat[newID, SiteNo := i.Index, on = "OldIdx"]
-predMat[,OldIdx := NULL]
-setcolorder(predMat, c("SiteNo","period","BGC","Pred","ProbAdj"))
-setnames(predMat,c("siteno","period","bgc","bgc_pred","prob"))
-dbWriteTable(con, "test_prob", predMat,row.names = F, append = T)
 
 ## Normal Period
 tableName <- "cciss_historic"

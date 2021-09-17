@@ -11,14 +11,34 @@ library(sp)
 vertDist <- function(x){(sideLen(x)*3)/2}
 sideLen <- function(x){x/sqrt(3)}
 
+##create siteno, bgc, dist_code table for preselected by BEC
+grd <- st_read("BC_HexPoints400m.gpkg")
+
 #bgc <- st_read(dsn = "~/CommonTables/WNA_BGC_v12_12Oct2020.gpkg")
-bgc <- st_read(dsn = "~/CommonTables/BC_BGCv12.gpkg")
+bgc <- st_read(dsn = "~/CommonTables/BC_BGCv12_Fixed.gpkg")
+bgc <- st_transform(bgc,4326)
+
+st_write(bgc,con,"bgc_map",row.names = F)
+
+bgc <- st_zm(bgc)
+bgc <- st_cast(bgc,"MULTIPOLYGON")
+head(bgc)
+grdAll <- st_join(grd,bgc)
+regions <- st_read("~/CommonTables/ForestRegions.gpkg","ForestDistricts2")
+regions <- regions["ORG_UNIT"]
+grdAll <- st_join(grdAll, regions)
+grd2 <- as.data.table(st_drop_geometry(grdAll))
+grd2 <- na.omit(grd2)
+setnames(grd2, c("siteno","zone","bgc","dist_code"))
+dbWriteTable(con,"siteidx",grd2, row.names = F)
+dbExecute(con,"create index on siteidx(bgc)")
+dbExecute(con,"create index on siteidx(dist_code,bgc)")
 #bgc <- bgc[is.na(bgc$State),c("BGC")]
 
 ##This is what I used to create the new hex grid
 dem <- raster("./BigDat/BC_25m_DEM_WGS84.tif")
 BC <- st_read(dsn = "./BigDat/BC_Province_Outline_Clean4.gpkg")
-BC <- ms_simplify(BC, keep = 0.05)
+BC <- ms_simplify(BC, keep = 0.1,sys = T)
 library(mapview)
 mapview(BC)
 st_write(BC,dsn = "BC_Simplified.gpkg")
@@ -26,11 +46,21 @@ st_is_valid(BC)
 
 BC <- st_read("./BigDat/TempBC2.gpkg")##very simple outline
 st_crs(BC) <- 3005
-grdAll <- st_make_grid(BC,cellsize = 400, square = F, flat_topped = F) ##make grid
-st_write(grdAll, dsn = "TempGrid400m.gpkg")
+grdAll <- st_make_grid(BC,cellsize = 4000, square = F, flat_topped = F) ##make grid
+st_write(grdAll, dsn = "Grid4km.gpkg")
+grdAll <- st_as_sf(data.frame(ID = 1:length(grdAll),geom = grdAll))
+grdAll <- st_join(grdAll,BC)
+grdAll <- grdAll[!is.na(grdAll$State),]
+st_write(grdAll, dsn = "Grid4km.gpkg", delete_dsn = T)
+pts_all <- st_centroid(grdAll)
+pts_all <- pts_all["ID"]
+pts_all$ID <- seq(1:nrow(pts_all))
+colnames(pts_all)[1] <- "siteno"
+st_write(pts_all,con,"pts_4km")
 
 BC <- st_read("./BC_Simplified.gpkg") ##actual outline
 grdAll <- st_read("~/HexGrid_Tile/BC_BiggerHex.gpkg")
+
 # grdAll$geom <- grdAll$geom + c(-167,-95) ##adjust so matches old centroids
 # grdAll$siteno <- 1:nrow(grdAll)
 # grdAll <- grdAll["siteno"]
@@ -153,78 +183,3 @@ for(tile in tiles){
   
 }
 
-library(data.table)
-dat <- fread("/media/data/ClimateBC_Data/Tile14_ID.csv")$ID1
-dat <- as.integer(dat)
-testID <- dat[length(dat)]
-length(dat[dat == testID])
-
-library(climatenaAPI)
-library(tictoc)
-tileTest <- dat[TileNum == 1,]
-tileTest[,TileNum := NULL]
-fwrite(temp,"FileforClimBC.csv")
-
-GCMs <- c("ACCESS1-0","CanESM2","CCSM4","CESM1-CAM5","CNRM-CM5","CSIRO-Mk3-6-0","GFDL-CM3","GISS-E2R","HadGEM2-ES",
-"INM-CM4","IPSL-CM5A-MR","MIROC5","MIROC-ESM","MRI-CGCM3","MPI-ESM-LR")
-rcps <- c("rcp45","rcp85")
-pers <- c("2025.gcm","2055.gcm","2085.gcm")
-test <- expand.grid(GCMs,rcps,pers)
-modNames <- paste(test$Var1,test$Var2,test$Var3, sep = "_")
-
-
-
-tic()
-tile1_all <- foreach(i = 1:90, .combine = rbind) %do% {
-  tile1_out <- climatebc_mult("FileforClimBC.csv",vip = 1,period = modNames[i], ysm = "YS")
-  tile1_out$ModName <- modNames[i]
-  tile1_out
-}
-toc()
-
-
-climBC_JSON <- function(body,period,ysm,url = "http://api6.climatebc.ca/api/clmApi6"){
-  colnames(body) <- c("ID1", "ID2", "lat", "lon", "el")
-  body$prd <- period
-  body$varYSM <- ysm
-  nGrp <- floor(nrow(body)/1000) + 1
-  for (grp in 0:(nGrp - 1)) {
-    body2 <- body[(grp * 1000 + 1):(grp * 1000 + 1000), ]
-    out <- sapply(1:1000, function(i) {
-      num <- i
-      if (num <= nrow(body2)) {
-        paste(c(paste0(sprintf("[%d][ID1]", i - 1), "=", 
-                       body2$ID1[num]), paste0(sprintf("[%d][ID2]", 
-                                                       i - 1), "=", body2$ID2[num]), paste0(sprintf("[%d][lat]", 
-                                                                                                    i - 1), "=", body2$lat[num]), paste0(sprintf("[%d][lon]", 
-                                                                                                                                                 i - 1), "=", body2$lon[num]), paste0(sprintf("[%d][el]", 
-                                                                                                                                                                                              i - 1), "=", body2$el[num]), paste0(sprintf("[%d][prd]", 
-                                                                                                                                                                                                                                          i - 1), "=", body2$prd[num]), paste0(sprintf("[%d][varYSM]", 
-                                                                                                                                                                                                                                                                                       i - 1), "=", body2$varYSM[num])), collapse = "&")
-      }
-    })
-    out <- paste(out, collapse = "&")
-    result <- POST(url = url, body = out, add_headers(`Content-Type` = "application/x-www-form-urlencoded"), 
-                   timeout(4e+05))
-    output <- fromJSON(rawToChar(result$content))
-    head(output)
-    dim(output)
-    if (grp == 0) {
-      cmb <- output
-    }
-    else {
-      cmb <- rbind(cmb, output)
-    }
-  }
-  head(cmb)
-  dim(cmb)
-  ver = cmb$Version[1]
-  ver
-  cmb2 <- subset(cmb, select = -c(prd, varYSM, Version))
-  cmb3 <- data.frame(ID1 = cmb2[, 1], ID2 = as.factor(cmb2[, 
-                                                           2]), lapply(cmb2[, 3:ncol(cmb2)], function(x) as.numeric(as.character(x))))
-  print(ver)
-  outF <- paste0(gsub(".csv", "", inputFile), "_", gsub(".nrm", 
-                                                        "", period), ysm, ".csv")
-  outF
-}
