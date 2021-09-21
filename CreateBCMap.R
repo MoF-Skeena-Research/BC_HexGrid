@@ -18,6 +18,14 @@ con <- dbConnect(drv, user = "postgres",
 #con <- dbConnect(drv, user = "postgres", host = "localhost",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ## for local machine
 #con <- dbConnect(drv, user = "postgres", host = "smithersresearch.ca",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for external use
 
+###read grid
+hexGrid <- st_read("HexGrid400m.gpkg") ##whatever yours is called
+#hexGrid <- st_read("E:/Sync/CCISS_data/SpatialFiles/BC_400mbase_hexgrid/HexGrd400.gpkg") 
+colnames(hexGrid)[1] <- "siteno"
+hexGrid <- as.data.table(hexGrid) ##convert to data table because join is much faster
+hexGrid[datPred, bgc_pred := i.bgc_pred, on = "siteno"]
+############
+
 cleanCrumbs <- function(minNum = 3, dat){
   minArea <- minNum*138564.1
   units(minArea) <- "m^2"
@@ -58,23 +66,19 @@ cleanCrumbs <- function(minNum = 3, dat){
 
 ##just so you know what options are available
 gcms <- dbGetQuery(con,"select distinct gcm from future_params")[,1]
-periods <- dbGetQuery(con,"select distinct futureperiod from future_params")[,1]
+futureperiods <- dbGetQuery(con,"select distinct futureperiod from future_params")[,1]
 rcps <- dbGetQuery(con,"select distinct scenario from future_params")[,1]
 
 ### select options
 gcm <- "IPSL-CM6A-LR"
-period <- "2021-2040"
+futureperiod <- "2021-2040"
 rcp <- "ssp245"
 
-q <- paste0("select siteno,bgc_pred from cciss_future12 where gcm = '",gcm,"' and period = '",period,"' and scenario = '",rcp,"'")
+q <- paste0("select siteno,bgc_pred from cciss_future12 where gcm = '",gcm,"' and futureperiod = '", futureperiods,"' and scenario = '",rcp,"'")
+tic()
 datPred <- setDT(dbGetQuery(con,q))## read from database
+toc()
 
-###read grid
-hexGrid <- st_read("HexGrid400m.gpkg") ##whatever yours is called
-colnames(hexGrid)[1] <- "siteno"
-hexGrid <- as.data.table(hexGrid) ##convert to data table because join is much faster
-hexGrid[datPred, bgc_pred := i.bgc_pred, on = "siteno"]
-############
 
 ### this is now old stuff, but some could be reused.
 ## pull district codes from database
@@ -203,3 +207,5 @@ mapClean <- aggregate(provClean[,"geometry"],  by = list(provClean$BGC), FUN = m
 colnames(mapClean)[1] <- "BGC"
 st_write(mapClean,"./maps/BC_1961-1990.gpkg", append = FALSE)
 toc()
+
+
