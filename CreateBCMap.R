@@ -11,7 +11,10 @@ library(tictoc)
 
 ##connect to database
 drv <- dbDriver("PostgreSQL")
-con <- dbConnect(drv, user = "postgres", host = "192.168.1.64",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for local use
+con <- dbConnect(drv, user = "postgres", 
+                 host = "138.197.168.220",
+                 password = "PowerOfBEC", port = 5432, 
+                 dbname = "cciss") ### for local use
 #con <- dbConnect(drv, user = "postgres", host = "localhost",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ## for local machine
 #con <- dbConnect(drv, user = "postgres", host = "smithersresearch.ca",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for external use
 
@@ -53,16 +56,37 @@ cleanCrumbs <- function(minNum = 3, dat){
   return(dat)
 }
 
+##just so you know what options are available
+gcms <- dbGetQuery(con,"select distinct gcm from future_params")[,1]
+periods <- dbGetQuery(con,"select distinct futureperiod from future_params")[,1]
+rcps <- dbGetQuery(con,"select distinct scenario from future_params")[,1]
+
+### select options
+gcm <- "IPSL-CM6A-LR"
+period <- "2021-2040"
+rcp <- "ssp245"
+
+q <- paste0("select siteno,bgc_pred from cciss_future12 where gcm = '",gcm,"' and period = '",period,"' and scenario = '",rcp,"'")
+datPred <- setDT(dbGetQuery(con,q))## read from database
+
+###read grid
+hexGrid <- st_read("HexGrid400m.gpkg") ##whatever yours is called
+colnames(hexGrid)[1] <- "siteno"
+hexGrid <- as.data.table(hexGrid) ##convert to data table because join is much faster
+hexGrid[datPred, bgc_pred := i.bgc_pred, on = "siteno"]
+############
+
+### this is now old stuff, but some could be reused.
 ## pull district codes from database
 #distcodes <- dbGetQuery(con, "select * from districts")[,1]
 distcodes <- dbGetQuery(con, "select * from dist_codes")[,1]
 
-library(doParallel)
-cl <- makeCluster(detectCores()-2)
-registerDoParallel(cl)
+# library(doParallel)
+# cl <- makeCluster(detectCores()-2)
+# registerDoParallel(cl)
 ##################################
 ###future - currently just looping through models, assuming only 1 time periods and scenario. Could change this
- gcms <- c("ACCESS1-0","CanESM2","CCSM4","GISS-E2R","HadGEM2-ES",
+gcms <- c("ACCESS1-0","CanESM2","CCSM4","GISS-E2R","HadGEM2-ES",
            "INM-CM4","IPSL-CM5A-MR","MIROC5","MIROC-ESM","MRI-CGCM3","MPI-ESM-LR")#,"CESM1-CAM5","CNRM-CM5","CSIRO-Mk3-6-0","GFDL-CM3"
 
 #gcms <- c("CESM1-CAM5","CNRM-CM5","CSIRO-Mk3-6-0","GFDL-CM3")
