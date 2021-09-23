@@ -19,11 +19,13 @@ con <- dbConnect(drv, user = "postgres",
 #con <- dbConnect(drv, user = "postgres", host = "smithersresearch.ca",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for external use
 
 ###read grid
-hexGrid <- st_read("HexGrid400m.gpkg") ##whatever yours is called
-#hexGrid <- st_read("E:/Sync/CCISS_data/SpatialFiles/BC_400mbase_hexgrid/HexGrd400.gpkg") 
-colnames(hexGrid)[1] <- "siteno"
-hexGrid <- as.data.table(hexGrid) ##convert to data table because join is much faster
-hexGrid[datPred, bgc_pred := i.bgc_pred, on = "siteno"]
+# hexGrid <- st_read("HexGrid400m.gpkg") ##whatever yours is called
+# #hexGrid <- st_read("E:/Sync/CCISS_data/SpatialFiles/BC_400mbase_hexgrid/HexGrd400.gpkg") 
+# colnames(hexGrid)[1] <- "siteno"
+# hexGrid <- as.data.table(hexGrid) ##convert to data table because join is much faster
+# hexGrid[datPred, bgc_pred := i.bgc_pred, on = "siteno"]
+
+hexGrid <- st_read(con, query = "select * from hex_grid")
 ############
 
 cleanCrumbs <- function(minNum = 3, dat){
@@ -78,6 +80,20 @@ q <- paste0("select siteno,bgc_pred from cciss_future12 where gcm = '",gcm,"' an
 tic()
 datPred <- setDT(dbGetQuery(con,q))## read from database
 toc()
+
+ colnames(hexGrid)[1] <- "siteno"
+ hexGrid <- as.data.table(hexGrid) ##convert to data table because join is much faster
+ hexGrid[datPred, bgc_pred := i.bgc_pred, on = "siteno"]
+
+
+
+
+
+
+
+
+
+
 
 
 ### this is now old stuff, but some could be reused.
