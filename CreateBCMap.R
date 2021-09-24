@@ -25,7 +25,22 @@ con <- dbConnect(drv, user = "postgres",
 # hexGrid <- as.data.table(hexGrid) ##convert to data table because join is much faster
 # hexGrid[datPred, bgc_pred := i.bgc_pred, on = "siteno"]
 
+test <- dbGetQuery(con,"select distinct gcm, scenario, futureperiod from cciss_future12 where siteno = 6476644")
+test2 <- dbGetQuery(con,"select distinct gcm, scenario, futureperiod from cciss_future12 where siteno = 1953822")
+setDT(test2)
+test2[,Type := "Full"]
+test[,Type := "Error"]
+test2[test, Col := i.Type, on = c("gcm","scenario","futureperiod")]
+
 hexGrid <- st_read(con, query = "select * from hex_grid")
+hexGrid <- st_read("HexGrid400m_Sept2021.gpkg")
+setDT(hexGrid)
+hexGrid[datPred, BGC := i.bgc_pred, on = "siteno"]
+hexGrid <- hexGrid[!is.na(BGC),]
+hexGrid <- st_as_sf(hexGrid)
+st_write(hexGrid,"HexMap.gpkg")
+
+noBGC_grid <- st_read(dsn)
 ############
 
 cleanCrumbs <- function(minNum = 3, dat){
@@ -76,7 +91,7 @@ gcm <- "IPSL-CM6A-LR"
 futureperiod <- "2021-2040"
 rcp <- "ssp245"
 
-q <- paste0("select siteno,bgc_pred from cciss_future12 where gcm = '",gcm,"' and futureperiod = '", futureperiods,"' and scenario = '",rcp,"'")
+q <- paste0("select siteno,bgc_pred from cciss_future12 where gcm = '",gcm,"' and futureperiod = '", futureperiod,"' and scenario = '",rcp,"'")
 tic()
 datPred <- setDT(dbGetQuery(con,q))## read from database
 toc()
