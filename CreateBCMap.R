@@ -8,6 +8,7 @@ library(dbplyr)
 library(foreach)
 library(rmapshaper)
 library(tictoc)
+source("./_functions/_cleancrumbs.R")
 
 ##connect to database
 drv <- dbDriver("PostgreSQL")
@@ -19,11 +20,17 @@ con <- dbConnect(drv, user = "postgres",
 #con <- dbConnect(drv, user = "postgres", host = "smithersresearch.ca",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for external use
 
 ###read grid
+tic()
+hexGrid <- st_read(con, query = "select * from hex_grid")
+toc()
+#st_write(hexGrid,"./outputs/basehex.gpkg", append = FALSE)
+
 # hexGrid <- st_read("HexGrid400m.gpkg") ##whatever yours is called
 # #hexGrid <- st_read("E:/Sync/CCISS_data/SpatialFiles/BC_400mbase_hexgrid/HexGrd400.gpkg") 
 # colnames(hexGrid)[1] <- "siteno"
 # hexGrid <- as.data.table(hexGrid) ##convert to data table because join is much faster
 # hexGrid[datPred, bgc_pred := i.bgc_pred, on = "siteno"]
+<<<<<<< HEAD
 
 test <- dbGetQuery(con,"select distinct gcm, scenario, futureperiod from cciss_future12 where siteno = 6476644")
 test2 <- dbGetQuery(con,"select distinct gcm, scenario, futureperiod from cciss_future12 where siteno = 1953822")
@@ -41,45 +48,10 @@ hexGrid <- st_as_sf(hexGrid)
 st_write(hexGrid,"HexMap.gpkg")
 
 noBGC_grid <- st_read(dsn)
+=======
+>>>>>>> 4424ddba224637786c159bc002e5b168528e0f28
 ############
 
-cleanCrumbs <- function(minNum = 3, dat){
-  minArea <- minNum*138564.1
-  units(minArea) <- "m^2"
-  dat <- st_cast(dat,"MULTIPOLYGON") %>% st_cast("POLYGON")
-  dat$Area <- st_area(dat)
-  dat$ID <- seq_along(dat$BGC)
-  bgcIdx <- data.table(ID = dat$ID,BGC = dat$BGC)
-  tooSmall <- dat[dat$Area < minArea,]
-  tooSmall$smallID <- seq_along(tooSmall$BGC)
-  if(nrow(tooSmall) < 1){
-    return(dat[,"BGC"])
-  }
-  smallIdx <- as.data.table(st_drop_geometry(tooSmall[,c("ID","smallID")]))
-  
-  temp <- st_intersects(tooSmall,dat,dist = 5)
-  cat(".")
-  idTouch <- data.table()
-  for(i in 1:length(temp)){
-    t1 <- data.table(Touching = temp[[i]])
-    t1[,ID := i]
-    idTouch <- rbind(idTouch,t1,fill = T)
-  }
-  cat(".")
-  idTouch[smallIdx, origIdx := i.ID, on = c(ID = "smallID")]
-  idTouch <- idTouch[Touching != origIdx,]
-  idTouch[bgcIdx,BGC := i.BGC, on = c(Touching = "ID")]
-  idTouch <- idTouch[, .(Num = .N,Touching), by = .(origIdx,BGC)
-    ][order(-Num), head(.SD,1), by = origIdx]
-  idTouch[,Num := NULL]
-  dat <- as.data.table(dat)
-  dat[idTouch, BGC := i.BGC, on = c(ID = "origIdx")]
-  dat <- st_as_sf(dat)
-  dat <- aggregate(dat[,"geometry"],  by = list(dat$BGC), FUN = mean)
-  cat(".")
-  colnames(dat)[1] <- "BGC"
-  return(dat)
-}
 
 ##just so you know what options are available
 gcms <- dbGetQuery(con,"select distinct gcm from future_params")[,1]
@@ -87,8 +59,8 @@ futureperiods <- dbGetQuery(con,"select distinct futureperiod from future_params
 rcps <- dbGetQuery(con,"select distinct scenario from future_params")[,1]
 
 ### select options
-gcm <- "IPSL-CM6A-LR"
-futureperiod <- "2021-2040"
+gcm <- "EC-Earth3"
+futureperiod <- "2041-2060"
 rcp <- "ssp245"
 
 q <- paste0("select siteno,bgc_pred from cciss_future12 where gcm = '",gcm,"' and futureperiod = '", futureperiod,"' and scenario = '",rcp,"'")
@@ -97,17 +69,16 @@ datPred <- setDT(dbGetQuery(con,q))## read from database
 toc()
 
  colnames(hexGrid)[1] <- "siteno"
- hexGrid <- as.data.table(hexGrid) ##convert to data table because join is much faster
+ tic()
+ hexGrid <- as.data.table(hexGrid)
+ toc()
+ ##convert to data table because join is much faster
  hexGrid[datPred, bgc_pred := i.bgc_pred, on = "siteno"]
-
-
-
-
-
-
-
-
-
+hexGrid <- hexGrid %>%  rename(BGC = bgc_pred)
+ 
+ hexGrid.pred <-  st_as_sf(hexGrid)
+ 
+st_write(hexGrid.pred,"./outputs/EC-Earth3_r45_2050.gpkg", append = FALSE)
 
 
 
@@ -238,5 +209,43 @@ mapClean <- aggregate(provClean[,"geometry"],  by = list(provClean$BGC), FUN = m
 colnames(mapClean)[1] <- "BGC"
 st_write(mapClean,"./maps/BC_1961-1990.gpkg", append = FALSE)
 toc()
+
+####From build USA_BEC script
+require(lwgeom)
+##############link predicted Zones to Polygons and write shape file
+
+hexpoly <- st_read(dsn = paste0("./hexpolys/", region, "_bgc_hex400.gpkg"))#, layer = "USA_bgc_hex_800m")
+hexpoly$hex_id <- as.character(hexpoly$hex_id)
+hexZone <- left_join(hexpoly, X1.pred, by = c("hex_id" = "ID1"))%>% st_transform(3005) %>% st_cast()
+temp <- hexZone %>% select(BGC, geom)
+temp2 <- st_zm(temp, drop=T, what='ZM') 
+##unremark for undissolved layer
+#st_write(temp2, dsn = paste0("./outputs/", region, "_", "SubZoneMap_hex400_undissolved.gpkg"), driver = "GPKG", delete_dsn = TRUE)
+
+## unremark for Dissolved
+##hexZone <- st_read(dsn = "./outputs/WA_bgc_hex8000_ungrouped.gpkg")#, layer = "USA_bgc_hex_800m") ## need to read it back in to ensure all type Polygon is consistent
+temp3 <- hexZone
+temp3$BGC <- droplevels(temp3$BGC)
+temp3 <-  st_as_sf(temp3)#
+st_precision(temp3) <- .5
+temp3$BGC <- forcats::fct_explicit_na(temp3$BGC,na_level = "(None)")
+temp3 <- temp3[,c("BGC","geom")]
+t2 <- aggregate(temp3[,-1], by = list(temp3$BGC), do_union = T, FUN = mean) %>% dplyr::rename(BGC = Group.1)
+t2 <- st_zm(t2, drop=T, what='ZM') %>% st_transform(3005) %>% st_cast()
+
+t2 <- t2 %>% st_buffer(0) ## randomly fixes geometry problems
+#mapView(t2)
+BGC_area <- t2 %>%
+  mutate(Area = st_area(.)) %>% mutate (Area = Area/1000000) %>%
+  mutate(ID = seq_along(BGC)) %>% dplyr::select(BGC, Area) %>% st_set_geometry(NULL)
+#write.csv(BGC_area, paste0("./outputs/", region, "_", timeperiod, "_", covcount, "_BGC_area_predicted_mahbgcreduced.csv"))
+st_write(t2, dsn = paste0("./outputs/", covcount, "_", "Subzone_Map_hex400_dissolved_reduced8July21_5.gpkg"), layer = paste0(region, "_", timeperiod, "_", region ,"_", covcount, "_vars_ranger"), driver = "GPKG", delete_layer = TRUE)
+
+
+
+
+
+
+
 
 
