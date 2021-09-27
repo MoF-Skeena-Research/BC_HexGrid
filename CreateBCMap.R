@@ -10,12 +10,142 @@ library(rmapshaper)
 library(tictoc)
 source("./_functions/_cleancrumbs.R")
 
+
+##script to process 4km subsampled data and create feasibility ratings
+##adjust gcm weight or rcp weight below
+gcm_weight <- data.table(gcm = c("ACCESS-ESM1-5", "BCC-CSM2-MR", "CanESM5", "CNRM-ESM2-1", "EC-Earth3", 
+                                 "GFDL-ESM4", "GISS-E2-1-G", "INM-CM5-0", "IPSL-CM6A-LR", "MIROC6", 
+                                 "MPI-ESM1-2-HR", "MRI-ESM2-0", "UKESM1-0-LL"),
+                         weight = c(1,1,0,1,1,1,1,0,1,1,1,1,0))
+
+rcp_weight <- data.table(rcp = c("ssp126","ssp245","ssp370","ssp585"), 
+                         weight = c(0.8,1,0.8,0))
+
+all_weight <- as.data.table(expand.grid(gcm = gcm_weight$gcm,rcp = rcp_weight$rcp))
+all_weight[gcm_weight,wgcm := i.weight, on = "gcm"]
+all_weight[rcp_weight,wrcp := i.weight, on = "rcp"]
+all_weight[,weight := wgcm*wrcp]
+modWeights <- all_weight
+
+##function to process data in postgres
+dbGetCCISS_4km <- function(con, period = "2041", modWeights){
+  
+  modWeights[,comb := paste0("('",gcm,"','",rcp,"',",weight,")")]
+  weights <- paste(modWeights$comb,collapse = ",")
+  groupby = "siteno"
+  ##cciss_future is now test_future  
+  cciss_sql <- paste0("
+  WITH cciss AS (
+    SELECT futureperiod,
+           siteno,
+           bgc,
+           bgc_pred,
+           w.weight
+    FROM pts4km_future12
+    JOIN (values ",weights,") 
+    AS w(gcm,scenario,weight)
+    ON pts4km_future12.gcm = w.gcm AND pts4km_future12.scenario = w.scenario
+    WHERE futureperiod IN ('",period,"')
+  
+  ), cciss_count_den AS (
+  
+    SELECT ", groupby, " siteref,
+           futureperiod,
+           SUM(weight) w
+    FROM cciss
+    GROUP BY ", groupby, ", futureperiod
+  
+  ), cciss_count_num AS (
+  
+    SELECT ", groupby, " siteref,
+           futureperiod,
+           bgc,
+           bgc_pred,
+           SUM(weight) w
+    FROM cciss
+    GROUP BY ", groupby, ", futureperiod, bgc, bgc_pred
+  
+  )
+  
+  SELECT cast(a.siteref as text) siteref,
+         a.futureperiod,
+         a.bgc,
+         a.bgc_pred,
+         a.w/cast(b.w as float) bgc_prop
+  FROM cciss_count_num a
+  JOIN cciss_count_den b
+    ON a.siteref = b.siteref
+   AND a.futureperiod = b.futureperiod
+   WHERE a.w <> 0
+  ")
+  
+  dat <- setDT(RPostgres::dbGetQuery(con, cciss_sql))
+  
+  setnames(dat, c("SiteRef","FuturePeriod","BGC","BGC.pred","BGC.prop"))
+  dat <- unique(dat) ##should fix database so not necessary
+  #print(dat)
+  return(dat)
+}
+
+##adapted feasibility function
+ccissMap <- function(SSPred,suit){
+  ### generate raw feasibility ratios
+  
+  suit <- suit[,.(BGC,SS_NoSpace,Spp,Feasible)]
+  suit <- unique(suit)
+  suit <- na.omit(suit)
+  SSPred <- SSPred[,.(SiteRef,FuturePeriod,BGC,SS_NoSpace,SS.pred,SSprob)]
+  Site_BGC <- unique(SSPred[,.(SiteRef,BGC)])
+  SSPred <- na.omit(SSPred)
+  setkey(SSPred,SS.pred)
+  setkey(suit,SS_NoSpace)
+  suitMerge <- suit[SSPred, allow.cartesian = T]
+  suitMerge <- na.omit(suitMerge)
+  setnames(suitMerge, old = c("SS_NoSpace", "i.SS_NoSpace"), new = c("SS.pred", "SS_NoSpace"))
+  suitVotes <- data.table::dcast(suitMerge, SiteRef + Spp + FuturePeriod + SS_NoSpace ~ Feasible, 
+                                 value.var = "SSprob", fun.aggregate = sum)
+  # Fill with 0 if columns does not exist, encountered the error at SiteRef 3104856 
+  set(suitVotes, j = as.character(1:5)[!as.character(1:5) %in% names(suitVotes)], value = 0)
+  suitVotes[,VoteSum := `1`+`2`+`3`+`4`+`5`]
+  suitVotes[,X := 1 - VoteSum]
+  suitVotes[,VoteSum := NULL]
+  suitVotes[,X := X + `5` + `4`]
+  suitVotes[,`:=`(`5` = NULL, `4` = NULL)]
+  setkey(suitVotes, SS_NoSpace, Spp)
+  setkey(suit, SS_NoSpace, Spp)
+  suitVotes[suit, Curr := i.Feasible]
+  suitVotes[is.na(Curr), Curr := 5]
+  setorder(suitVotes,SiteRef,SS_NoSpace,Spp,FuturePeriod)
+  suitVotes[,FuturePeriod := as.integer(FuturePeriod)]
+  suitVotes[Curr > 3.5, Curr := 4]
+  colNms <- c("1","2","3","X")
+  suitVotes <- suitVotes[,lapply(.SD, sum),.SDcols = colNms, 
+                         by = .(SiteRef,FuturePeriod, SS_NoSpace,Spp,Curr)]
+  suitVotes[,NewSuit := round(`1`+(`2`*2)+(`3`*3)+(X*5))]
+  suitVotes <- suitVotes[,.(SiteRef,FuturePeriod,SS_NoSpace,Spp,Curr,NewSuit)]
+  return(suitVotes)
+}
+
 ##connect to database
+library(ccissdev)
 drv <- dbDriver("PostgreSQL")
 con <- dbConnect(drv, user = "postgres", 
                  host = "138.197.168.220",
                  password = "PowerOfBEC", port = 5432, 
                  dbname = "cciss") ### for local use
+
+##pull bgc data
+bgc <- dbGetCCISS_4km(con,"2041",all_weight) ##takes about 15 seconds
+edaZonal <- E1[grep("01$|h$|00$",SS_NoSpace),]
+##edatopic overlap
+SSPreds <- edatopicOverlap(bgc,edaZonal,E1_Phase) ##also about 15 seconds
+SSPreds <- SSPreds[grep("01$|h$|00$",SS_NoSpace),]
+newFeas <- ccissMap(SSPreds,S1) ##ignore warning
+## now need to connect to 4km hex map
+########################################################################
+
+
+
 #con <- dbConnect(drv, user = "postgres", host = "localhost",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ## for local machine
 #con <- dbConnect(drv, user = "postgres", host = "smithersresearch.ca",password = "Kiriliny41", port = 5432, dbname = "cciss_data") ### for external use
 
@@ -25,12 +155,21 @@ hexGrid <- st_read(con, query = "select * from hex_grid")
 toc()
 #st_write(hexGrid,"./outputs/basehex.gpkg", append = FALSE)
 
-# hexGrid <- st_read("HexGrid400m.gpkg") ##whatever yours is called
+hexGrid <- st_read("HexGrid400m_Sept2021.gpkg") ##whatever yours is called
+datPred <- fread("datPred.csv")
+
+### select options
+gcm <- "EC-Earth3"
+futureperiod <- "2041-2060"
+rcp <- "ssp245"
+
+q <- paste0("select siteno,bgc_pred from cciss_future12 where gcm = '",gcm,"' and futureperiod = '", futureperiod,"' and scenario = '",rcp,"'")
+
+datPred2 <- dbGetQuery(con,q)
 # #hexGrid <- st_read("E:/Sync/CCISS_data/SpatialFiles/BC_400mbase_hexgrid/HexGrd400.gpkg") 
 # colnames(hexGrid)[1] <- "siteno"
 # hexGrid <- as.data.table(hexGrid) ##convert to data table because join is much faster
 # hexGrid[datPred, bgc_pred := i.bgc_pred, on = "siteno"]
-<<<<<<< HEAD
 
 test <- dbGetQuery(con,"select distinct gcm, scenario, futureperiod from cciss_future12 where siteno = 6476644")
 test2 <- dbGetQuery(con,"select distinct gcm, scenario, futureperiod from cciss_future12 where siteno = 1953822")
@@ -48,8 +187,7 @@ hexGrid <- st_as_sf(hexGrid)
 st_write(hexGrid,"HexMap.gpkg")
 
 noBGC_grid <- st_read(dsn)
-=======
->>>>>>> 4424ddba224637786c159bc002e5b168528e0f28
+
 ############
 
 
@@ -63,9 +201,9 @@ gcm <- "EC-Earth3"
 futureperiod <- "2041-2060"
 rcp <- "ssp245"
 
-q <- paste0("select siteno,bgc_pred from cciss_future12 where gcm = '",gcm,"' and futureperiod = '", futureperiod,"' and scenario = '",rcp,"'")
+q <- paste0("select siteno,bgc_pred from cciss_future12 where futureperiod = '", futureperiod,"' and scenario = '",rcp,"' and gcm = '",gcm,"'")
 tic()
-datPred <- setDT(dbGetQuery(con,q))## read from database
+datPred <- dbGetQuery(con,q)## read from database
 toc()
 
  colnames(hexGrid)[1] <- "siteno"
