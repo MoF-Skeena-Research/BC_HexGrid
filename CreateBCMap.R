@@ -28,23 +28,23 @@ all_weight[,weight := wgcm*wrcp]
 modWeights <- all_weight
 
 ##function to process data in postgres
-dbGetCCISS_4km <- function(con, period = "2041", modWeights){
+dbGetCCISS_4km <- function(con, period = "2041-2060", modWeights){
   
   modWeights[,comb := paste0("('",gcm,"','",rcp,"',",weight,")")]
   weights <- paste(modWeights$comb,collapse = ",")
-  groupby = "siteno"
+  groupby = "rast_id"
   ##cciss_future is now test_future  
   cciss_sql <- paste0("
   WITH cciss AS (
-    SELECT futureperiod,
-           siteno,
+    SELECT rast_id,
+           futureperiod,
            bgc,
            bgc_pred,
            w.weight
-    FROM pts4km_future12
+    FROM pts2km_future
     JOIN (values ",weights,") 
     AS w(gcm,scenario,weight)
-    ON pts4km_future12.gcm = w.gcm AND pts4km_future12.scenario = w.scenario
+    ON pts2km_future.gcm = w.gcm AND pts2km_future.scenario = w.scenario
     WHERE futureperiod IN ('",period,"')
   
   ), cciss_count_den AS (
@@ -135,12 +135,59 @@ con <- dbConnect(drv, user = "postgres",
                  dbname = "cciss") ### for local use
 
 ##pull bgc data
-bgc <- dbGetCCISS_4km(con,"2041",all_weight) ##takes about 15 seconds
+tic()
+bgc <- dbGetCCISS_4km(con,"2041-2060",all_weight) ##takes about 15 seconds
+toc()
 edaZonal <- E1[grep("01$|h$|00$",SS_NoSpace),]
 ##edatopic overlap
 SSPreds <- edatopicOverlap(bgc,edaZonal,E1_Phase) ##also about 15 seconds
 SSPreds <- SSPreds[grep("01$|h$|00$",SS_NoSpace),]
 newFeas <- ccissMap(SSPreds,S1) ##ignore warning
+sppFeas <- newFeas[Spp == "Cw",]
+sppFeas <- unique(sppFeas,by = "SiteRef")
+sppFeas[,SiteRef := as.integer(SiteRef)]
+sppFeas <- sppFeas[,.(SiteRef,NewSuit)]
+bcRast <- setValues(bcRast,NA)
+bcRast[sppFeas$SiteRef] <- sppFeas$NewSuit
+writeRaster(bcRast,"Cw_Feas_test.tif", format = "GTiff")
+
+
+##make projected bgc maps
+scn <- "ssp126";fp <- "2021-2040";gcm <- "EC-Earth3"
+dat <- dbGetQuery(con,paste0("select rast_id, bgc_pred from pts2km_future where gcm = '",gcm,"' and scenario = '",
+                             scn,"' and futureperiod = '",fp,"'"))
+setDT(dat)
+cols <- fread("WNAv12_3_SubzoneCols.csv")
+cols[duplicated(colour),]
+dat[cols,Col := i.colour, on = c(bgc_pred = "classification")]
+bcRast <- setValues(bcRast,NA)
+X <- bcRast
+
+##colins
+temp <- unique(dat[,.(Col,bgc_pred)])
+setorder(temp,bgc_pred)
+ColScheme <- factor(dat$Col, levels=sort(temp$Col))
+Units <- factor(dat$bgc_pred, levels=temp$bgc_pred)##pred
+values(X) <- NA
+values(X)[as.integer(dat$rast_id)] <- Units
+cellNums <- 1:ncell(X)
+allCells <- data.table(Cell = cellNums)
+allCells[dat,Col := i.Col, on = c(Cell = "rast_id")]
+allCells[is.na(Col),Col := "#050505"]
+
+plot(X, xaxt="n", yaxt="n", col=allCells$Col, legend=FALSE, legend.mar=0, maxpixels=ncell(X), bty="n", box=FALSE)
+
+
+values(X)[-(1:length(zones))] <- NA # cover up the color bar
+image(X, add=T, col="white") # cover up the color bar
+values(X) <- factor(pred, levels=zones)[plotOrder] # restore the raster values
+plot(bdy.bc, add=T, lwd=0.4)
+
+plot(X, xaxt="n", yaxt="n", col=alpha(ColScheme, 1), legend=FALSE, legend.mar=0, maxpixels=ncell(X), bty="n", box=FALSE)
+values(X)[-(1:length(zones))] <- NA # cover up the color bar
+image(X, add=T, col="white")
+plot(bdy.bc, add=T, lwd=0.4)
+mtext(paste("(", letters[4:5][i], ") ", GCM, "\n      (", proj.year.name[which(proj.years==proj.year)], ", " , c("RCP.4.5", "RCP8.5")[which(rcps==rcp)], ")", sep=""), side=3, line=-0.50, adj=0.05, cex=0.8, font=2)
 ## now need to connect to 4km hex map
 ########################################################################
 
