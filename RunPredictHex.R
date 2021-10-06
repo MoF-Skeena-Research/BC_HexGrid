@@ -14,6 +14,23 @@ require(RPostgreSQL)
 library(disk.frame)
 require(RPostgres)
 
+##make preselected points dataset
+st_layers("~/CommonTables/ForestRegions.gpkg")
+dists <- st_read("~/CommonTables/ForestRegions.gpkg","ForestDistricts2")
+dists <- dists["ORG_UNIT"]
+dists$ORG_UNIT <- as.character(dists$ORG_UNIT)
+dists$ORG_UNIT[dists$ORG_UNIT == "DSS"] <- "CAS"
+colnames(dists)[1] <- "dist_code"
+drv <- dbDriver("PostgreSQL")
+con <- dbConnect(drv, user = "postgres", host = "138.197.168.220",password = "PowerOfBEC", port = 5432, dbname = "cciss") ### for local use
+st_write(dists,con,"district_map")
+dbExecute(con,"create table district_ids as
+              select district_map.dist_code,
+              hex_points.siteno 
+              from hex_points
+              inner join district_map
+              on ST_Intersects(hex_points.geom,district_map.geom)")
+
 dat1 <- fread("/media/data/ClimateBC_Data/SelectVars/Tile9_Y_SV.csv")
 dat2 <- fread("/media/data/ClimateBC_Data/SelectVars/Tile9_S_SV.csv")
 datYS <- cbind(dat1,dat2)
