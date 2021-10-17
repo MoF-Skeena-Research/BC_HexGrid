@@ -11,6 +11,7 @@ library(tictoc)
 source("./_functions/_cleancrumbs.R")
 
 
+
 ##connect to database
 library(ccissdev)
 drv <- dbDriver("PostgreSQL")
@@ -19,7 +20,7 @@ con <- dbConnect(drv, user = "postgres",
                  password = "PowerOfBEC", port = 5432, 
                  dbname = "cciss") ### for local use
 
-##read grid
+
 # tic()
 # hexGrid <- st_read(con, query = "select * from hex_grid")
 # toc()
