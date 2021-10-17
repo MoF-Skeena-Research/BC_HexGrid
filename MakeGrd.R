@@ -59,6 +59,53 @@ colnames(pts_all)[1] <- "siteno"
 st_write(pts_all,con,"pts_4km")
 
 BC <- st_read("./BC_Simplified.gpkg") ##actual outline
+bcRast <- raster(BC,resolution = c(2000,2000))
+centres <- coordinates(bcRast)
+centres <- as.data.table(centres)
+centres[,RastID := 1:nrow(centres)]
+rast_points <- st_as_sf(centres,coords = c("x","y"), crs = 3005)
+rast_pointsBC <- st_join(rast_points,BC,left = F)
+rast_pointsBC$State <- NULL
+colnames(rast_pointsBC)[1] <- "rast_id"
+bcRast[rast_pointsBC$RastID] <- 5
+values(bcRast) <- 1
+writeRaster(bcRast,"BC_Raster.tif", format = "GTiff",overwrite = T)
+st_write(rast_pointsBC,"BC_Raster_Centroids.gpkg")
+
+library(rpostgis)
+library(RPostgreSQL)
+drv <- dbDriver("PostgreSQL")
+con <- dbConnect(drv, user = "postgres", 
+                 host = "138.197.168.220",
+                 password = "PowerOfBEC", port = 5432, 
+                 dbname = "cciss") ### for local use
+
+pgWriteRast(con,name = "bc_raster", raster = bcRast, overwrite = T)
+st_write(rast_pointsBC,con,"rast_centroids")
+
+dbExecute(con,"create table pts2km_ids as
+          select rast_centroids.rast_id,
+          hex_grid.siteno
+          from rast_centroids
+          inner join hex_grid
+          on ST_Intersects(rast_centroids.geometry,hex_grid.geom)")
+dbExecute(con,
+          "create table pts2km_future as
+          select pts2km_ids.rast_id,
+          cciss_future12.gcm, cciss_future12.scenario, 
+          cciss_future12.futureperiod, cciss_future12.bgc, 
+          cciss_future12.bgc_pred
+          from pts2km_ids
+          inner join cciss_future12 
+          on pts2km_ids.siteno = cciss_future12.siteno")
+
+dbExecute(con,"create index on pts2km_future (futureperiod)")
+dbExecute(con, "create index on pts2km_future (gcm,scenario,futureperiod)")
+square_grd <- st_make_grid(BC,cellsize = 4000, square = T)
+square_grd <- st_as_sf(data.frame(geom = square_grd))
+square_grd <- st_join(square_grd,BC,left = F)
+square_grd$siteno <- 1:nrow(square_grd)
+square_grd$State <- NULL
 grdAll <- st_read("~/HexGrid_Tile/BC_BiggerHex.gpkg")
 
 # grdAll$geom <- grdAll$geom + c(-167,-95) ##adjust so matches old centroids
